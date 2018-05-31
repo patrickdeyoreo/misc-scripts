@@ -1,42 +1,106 @@
 #!/usr/bin/env sh
 
-## Set the virtual console colors
-#
-
-if test "$#" -ne 1; then
-  printf 'usage: %s FILENAME\n' "${0##*/}"
-  exit 2
-fi
+## A script to set the terminal colors on a whim
 
 
-if ! test -e "$1" ; then
-  printf 'error: %s: no such file or directory\n' "${1##*/}"
-  exit 3
+## Show the usage info, or, if given an argument, the long help.
+help() {
+  case $# in (0) sed q ;; (*) cat ;; esac
+} <<~eof~
+usage: vt-colorizer.sh [-r] [file]
+  Set the virtual console colors.
 
-elif ! test -f "$1" ; then
-  if test -d "$1" ; then
-    printf 'error: %s: file is a directory\n' "${1##*/}"
-  else
-    printf 'error: %s: file is not a regular file\n' "${1##*/}"
-  fi
-  exit 4
+  If FILE is -, data is read from standard input.
 
-elif ! test -r "$1"; then
-  printf 'error: %s: read permission required\n' "${1##*/}"
-  exit 5
+  The -r option resets all colors to their original values.
 
-elif ! test "${TERM}" = 'linux'; then
-  printf 'error: %s: not a valid TERM (must be "linux")\n' "${TERM}"
-  exit 6
-fi >&2
+  Color definitions follow a strict subset of the Xresources format spec.
 
-
-printf '%b' $(
-  sed -n 's/.*\*color\([0-9]\{1,\}\).*#\([0-9a-fA-F]\{6\}\).*/\1 \2/p' "$1" |
-    awk '$1 < 16 {printf "\\e]P%X%s", $1m, $2}'
-)
-
-clear
+  The following are examples of valid definitions:
+    color1:  #CC221A
+    color3 : #D79b1f
+    *color7 :#9a971B
+    *color15:#eeebea
+~eof~
 
 
-exit 0
+## Check non-option arguments.
+ckargs() {
+
+  test $# -eq 1 || {
+    help
+    return 1
+  }
+
+  test -e "$1" || {
+    printf 'error: %s: No such file or directory\n' "$1"
+    return 1
+  }
+
+  test -f "$1" || {
+    printf 'error: %s: Not a regular file\n' "$1"
+    return 1
+  }
+
+  test -r "$1" || {
+    printf 'error: %s: Permission denied\n' "$1"
+    return 1
+  }
+
+} 1>&2
+
+
+## Load colors from a file.
+apply() {
+
+  sed -nE '
+  /^[[:blank:]]*\*?color[[:digit:]]+[[:blank:]]*:[[:blank:]]*#[[:xdigit:]]{6}[[:blank:]]*$/!b
+  s_.*color([[:digit:]]+).*#(..)(..)(..).*_tput initc \1 $(( 0x\2 * 1000 / 256 )) $(( 0x\3 * 1000 / 256 )) $(( 0x\4 * 1000 / 256 ))_ep
+  ' "$1"
+
+  clear
+
+}
+
+
+## Do the thing.
+main() {
+  for _; do
+    case ${_::1} in
+      -)
+        case ${_#?} in
+          -)
+            shift
+            break
+            ;;
+          r)
+            tput oc
+            return 0
+            ;;
+          h|-help)
+            help ${_%-*}
+            return 0
+            ;;
+          *)
+            printf '%s: %s: unrecognized option\n' "${0##*/}" "$_" 1>&2
+            return 2
+            ;;
+        esac
+        shift
+        ;;
+      *)
+        set -- "${@:2}" "$1"
+        ;;
+    esac
+  done
+
+  ckargs "$@" && apply "$@"
+
+  return
+}
+
+
+## Run the beast.
+main "$@"
+
+exit
