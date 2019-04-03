@@ -1,0 +1,73 @@
+#!/usr/bin/env sh
+
+#~#~#~#~#~#~#~#~#~#~#~#~#~#~#~#~#~#~#~#~#~#~#~#~#~#~#~#~#~#~#~#~#~#~#~#~#~#~#
+#############################################################################
+#
+# ~//~ Description ~//~
+#
+# Converts an environment file (e.g. /etc/environment) to a shell script.
+#
+#~#~#~#~#~#~#~#~#~#~#~#~#~#~#~#~#~#~#~#~#~#~#~#~#~#~#~#~#~#~#~#~#~#~#~#~#~#~#
+#############################################################################
+#
+# ~//~ Portability ~//~
+#
+# sed and sh are expected to be conforming implementations of the respective
+# utilities outlined in POSIX.1‐2008.
+#
+#~#~#~#~#~#~#~#~#~#~#~#~#~#~#~#~#~#~#~#~#~#~#~#~#~#~#~#~#~#~#~#~#~#~#~#~#~#~#
+#############################################################################
+#
+# ~//~ Explanation ~//~
+# 
+# * Under sh: define a function called b; the contents of the function body
+#   is irrelevant as long as the function is syntactically well-formed.
+#   Then (i.e. :), execute sed on the script.
+#
+# * Under sed: branch to the '()' label, then some well-formed input.
+#   Then an 'i' command, which has no effect because it's always skipped.
+#   Funally the '()' label followed by the useful part of the script.
+#
+#~#~#~#~#~#~#~#~#~#~#~#~#~#~#~#~#~#~#~#~#~#~#~#~#~#~#~#~#~#~#~#~#~#~#~#~#~#~#
+#############################################################################
+
+# Beginning of sh commands
+: "$@"
+
+# Define function b to exec sed
+b ()
+{
+i\
+f true; then exec sed -f "$0" "$@"; fi
+}
+
+# Call b with script args
+b "$@"
+
+############################################################################
+
+# Beginning of sed commands
+: ()
+
+# Output blank lines & comments
+/^[[:blank:]\]*\(#.*\)\?$/!{
+
+  # Prepend "export"
+  s/^/export /
+
+  # Get line continuations
+  : cont
+  /^[[:blank:]]*#/!{
+    /^\(.*[^\]\)\?\(\\\\\)*\\$/{
+      N
+      b cont
+    }
+  }
+}
+
+# Start next cycle at label '()'
+n
+b ()
+
+
+# vi:ft=sed:tw=78

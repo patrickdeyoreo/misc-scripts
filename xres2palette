@@ -1,0 +1,13 @@
+#!/usr/bin/env sh
+
+sort -V -- "${1:-/dev/null}" | sed -nE '
+/^\*?color[[:digit:]]{,2}([[:blank:]]|:).*/{
+s/$/:/
+s/.*[[:blank:]]//
+H
+}
+${
+g
+s/\n|:$//g
+p
+}'

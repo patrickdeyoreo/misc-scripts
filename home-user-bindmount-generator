@@ -1,4 +1,4 @@
-#!/bin/sh -u
+#!/usr/bin/env sh
 #
 # home-user-bind-generator
 #
@@ -10,48 +10,65 @@
 #
 #
 # - TODO:
-# * Abstraction to arbitrary users would require template generator
+# * Abstract to dynamically configurable users using a template generator
 
 
-exec 2>/dev/null || exit 1
+set -u
 
-unset -v path prefix target unit || exit 1
+if ! exec 2>/dev/null; then
+  exit 1
+fi
+
+if ! unset path prefix target unit user; then
+  exit 1
+fi
+
+user='pat'
 
 target="$1/multi-user.target.wants"
 
-prefix="$1/home-patrick"
+prefix="$1/home-${user}"
+
 
 mkdir -p "${target}" || exit 1
+
 
 for path in /etc/skel/* /etc/skel/.* ; do
   case "${path##*/}" in
     .|..) continue ;;
   esac
 
-  test -d "${path}" || continue
-  test -L "${path}" && continue
+  if ! test -d "${path}"; then
+    continue
+  fi
+
+  if test -L "${path}"; then
+    continue
+  fi
 
   path="${path##*/}"
+
   unit="${prefix}-${path}.mount"
+
 
   ln -sf "${unit}" "${target}"
 
-  cat <<EOF >| "${unit}"
+  cat << }}} >| "${unit}"
 [Unit]
 RequiresMountsFor=/home
 RequiresMountsFor=/users
-ConditionPathIsDirectory=/home/patrick
-ConditionPathIsDirectory=/users/patrick/${path}
+ConditionPathIsDirectory=/home/${user}
+ConditionPathIsDirectory=/users/${user}/${path}
 
 [Mount]
-What=/users/patrick/${path}
-Where=/home/patrick/${path}
+What=/users/${user}/${path}
+Where=/home/${user}/${path}
 Options=rbind,nofail
 Type=none
 
 [Install]
 WantedBy=multi-user.target
-EOF
+}}}
 
 done
 

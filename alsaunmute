@@ -4,7 +4,7 @@
 #
 # see alsactl_init(7)
 
-exec command alsactl \
+exec alsactl \
   --env ALSA_CONFIG_PATH="${ALSA_CONFIG_PATH:-/etc/alsa/alsactl.conf}"  \
   --initfile="${ALSACTL_INITFILE:-/usr/share/alsa/init/00main}"         \
   init

@@ -57,7 +57,7 @@ elif test -n "${KSH_VERSION}"; then
 
 
 ## Is this bash?
-if test -n "${BASH_VERSION}"; then
+elif test -n "${BASH_VERSION}"; then
 
   ## Check if BASH_SOURCE matches the invoked shell or script
   test "${BASH_SOURCE}" = "$0"
