@@ -16,7 +16,7 @@
 
 ## Enable debugging output
 if [[ -n ${DEBUG} ]]; then
-  set -"${DEBUG_OPTS:-xv}"
+  set -"${DEBUGOPTS:-xv}"
 fi
 
 
@@ -31,16 +31,16 @@ init_env() {
   set -o braceexpand -o errexit
 
 
-  ## -- Work Directory
-
-  ## Directory for temporary files
-  declare -g workdir=''
-
-  ## Set a trap to clean up on exit
-  trap '[[ -d ${workdir} ]] && rm -rf "${workdir}"' EXIT
-
-  ## Create directory for temporary files
-  workdir="$(mktemp -d --tmpdir "${0##*/}-$$-XXXXXX")"
+#  ## -- Work Directory
+#
+#  ## Directory for temporary files
+#  declare -g workdir=''
+#
+#  ## Set a trap to clean up on exit
+#  trap '[[ -d ${workdir} ]] && rm -rf "${workdir}"' EXIT
+#
+#  ## Create directory for temporary files
+#  workdir="$(mktemp -d --tmpdir "${0##*/}-$$-XXXXXX")"
 
   
   ## -- Tiles
@@ -48,10 +48,11 @@ init_env() {
   ## List of tiles
   declare -ag  tiles=( {A..Z} _ )
   declare -Aig tile_map=( )
-  for (( i = 0; i < "${#tiles[@]}"; ++i )); do
+
+  local -i i=0
+  for (( i = 0; i < ${#tiles[@]}; ++i )); do
     tile_map[${tiles[i]}]=${i}
   done
-
 
   ## Letters mapped to tile count
   declare -Aig tile_counts=(
@@ -71,7 +72,7 @@ init_env() {
   ## -- Board
 
   ## Square board dimensions {board_dim}x{board_dim}
-  declare -ig board_dim=${board_dim}
+  declare -ig board_dim=board_dim
 
   ## Default to 9x9
   (( board_dim <= 1 )) && board_dim=9
@@ -87,7 +88,7 @@ init_env() {
   ## -- Players
 
   ## Number of players
-  declare -ig player_count=${player_count}
+  declare -ig player_count=player_count
 
   ## Default to 1 player
   (( player_count <= 0 )) && player_count=1
@@ -108,21 +109,21 @@ init_env() {
 ## Prints the board
 print_board() {
 
-  local i=0
+  local -i i=0
   local coord_fmt="%${#board_dim}d"
 
   ## Print horizontal coordinates
   if tput rep 1> /dev/null 2>&1; then
     tput rep 32 "$((${#board_dim} + 1))"
   else
-    for ((i = 0; i <= ${#board_dim}; ++i)); do
+    for (( i = 0; i <= ${#board_dim}; ++i )); do
       printf ' '
     done
   fi
   eval "echo {1..$((board_dim))}"
 
   ## Print board and vertical coordinates
-  for ((i = 0; i < board_dim; ++i)); do
+  for (( i = 0; i < board_dim; ++i )); do
     printf "${coord_fmt} " "$((i + 1))" 
     echo "${!board[i]}"
   done
@@ -160,7 +161,7 @@ draw_tile() {
 
   ## Try random tile until pulled tile exists
   while tile="${tiles[RANDOM % ${#tiles[@]}]}"
-    ! ((tile_counts[${tile}]))
+    ! (( tile_counts[${tile}] ))
   do
     :
   done
@@ -309,3 +310,7 @@ main() {
 
 ## Start the game
 main
+
+
+## Exit the script
+exit 0
