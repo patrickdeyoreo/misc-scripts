@@ -21,6 +21,22 @@ fi
 
 
 
+## Creates work directory and sets trap to delete it upon exit
+setup_workdir() {
+
+  ## Directory for temporary files
+  declare -g workdir=''
+
+  ## Set a trap to clean up on exit
+  trap '[[ -d ${workdir} ]] && rm -rf "${workdir}"' EXIT
+
+  ## Create directory for temporary files
+  workdir="$(mktemp -d --tmpdir "${0##*/}-$$-XXXXXX")"
+
+}
+
+
+
 ## Sets up the environment
 init_env() {
 
@@ -30,29 +46,8 @@ init_env() {
   ## Expand braces and exit on error
   set -o braceexpand -o errexit
 
-
-#  ## -- Work Directory
-#
-#  ## Directory for temporary files
-#  declare -g workdir=''
-#
-#  ## Set a trap to clean up on exit
-#  trap '[[ -d ${workdir} ]] && rm -rf "${workdir}"' EXIT
-#
-#  ## Create directory for temporary files
-#  workdir="$(mktemp -d --tmpdir "${0##*/}-$$-XXXXXX")"
-
   
   ## -- Tiles
-
-  ## List of tiles
-  declare -ag  tiles=( {A..Z} _ )
-  declare -Aig tile_map=( )
-
-  local -i i=0
-  for (( i = 0; i < ${#tiles[@]}; ++i )); do
-    tile_map[${tiles[i]}]=${i}
-  done
 
   ## Letters mapped to tile count
   declare -Aig tile_counts=(
@@ -68,21 +63,61 @@ init_env() {
     [S]=1 [T]=1 [U]=1 [V]=4 [W]=4 [X]=8 [Y]=4 [Z]=10 [_]=0
   )
 
+  ## List of remaining tiles
+  declare -ag  tiles=( {A..Z} _ )
+
+  ## Map of tile indices
+  declare -Aig tile_map=( )
+
+  local -i i=0
+  for (( i = 0; i < ${#tiles[@]}; ++i )); do
+    tile_map[${tiles[i]}]=${i}
+  done
+
 
   ## -- Board
 
   ## Square board dimensions {board_dim}x{board_dim}
-  declare -ig board_dim=board_dim
-
-  ## Default to 9x9
-  (( board_dim <= 1 )) && board_dim=9
+  declare -ig board_dim=15
 
   ## Board represented as array of arrays
-  eval "declare -ag board=( board_row{0..$((board_dim - 1))}\[@] )"
-  eval "declare -ag board_row{0..$((board_dim - 1))}='( )'"
+  declare -ag board=( board_row{0..14}\[@] )
+  declare -ag board_points=( board_points_row{0..14}\[@] )
+  declare -ag board_row{0..14}='( )'
 
   ## Fill board with spaces
-  eval "declare -g board_row{0..$((board_dim - 1))}\[{0..$((board_dim - 1))}]='.'"
+  declare -ag board_row0=(  3 . . 2 . . . 3 . . . 2 . . 3 )
+  declare -ag board_row1=(  . 2 . . . 3 . . . 3 . . . 2 . )
+  declare -ag board_row2=(  . . 2 . . . 2 . 2 . . . 2 . . )
+  declare -ag board_row3=(  2 . . 2 . . . 2 . . . 2 . . 2 )
+  declare -ag board_row4=(  . . . . 2 . . . . . 2 . . . . )
+  declare -ag board_row5=(  . 3 . . . 3 . . . 3 . . . 3 . )
+  declare -ag board_row6=(  . . 2 . . . 2 . 2 . . . 2 . . )
+  declare -ag board_row7=(  3 . . 2 . . . 2 . . . 2 . . 3 )
+  declare -ag board_row8=(  . . 2 . . . 2 . 2 . . . 2 . . )
+  declare -ag board_row9=(  . 3 . . . 3 . . . 3 . . . 3 . )
+  declare -ag board_row10=( . . . . 2 . . . . . 2 . . . . )
+  declare -ag board_row11=( 2 . . 2 . . . 2 . . . 2 . . 2 )
+  declare -ag board_row12=( . . 2 . . . 2 . 2 . . . 2 . . )
+  declare -ag board_row13=( . 2 . . . 3 . . . 3 . . . 2 . )
+  declare -ag board_row14=( 3 . . 2 . . . 3 . . . 2 . . 3 )
+
+  declare -aig board_points_row0=(  3 1 1 2 1 1 1 3 1 1 1 2 1 1 3 )
+  declare -aig board_points_row1=(  1 2 1 1 1 3 1 1 1 3 1 1 1 2 1 )
+  declare -aig board_points_row2=(  1 1 2 1 1 1 2 1 2 1 1 1 2 1 1 )
+  declare -aig board_points_row3=(  2 1 1 2 1 1 1 2 1 1 1 2 1 1 2 )
+  declare -aig board_points_row4=(  1 1 1 1 2 1 1 1 1 1 2 1 1 1 1 )
+  declare -aig board_points_row5=(  1 3 1 1 1 3 1 1 1 3 1 1 1 3 1 )
+  declare -aig board_points_row6=(  1 1 2 1 1 1 2 1 2 1 1 1 2 1 1 )
+  declare -aig board_points_row7=(  3 1 1 2 1 1 1 2 1 1 1 2 1 1 3 )
+  declare -aig board_points_row8=(  1 1 2 1 1 1 2 1 2 1 1 1 2 1 1 )
+  declare -aig board_points_row9=(  1 3 1 1 1 3 1 1 1 3 1 1 1 3 1 )
+  declare -aig board_points_row10=( 1 1 1 1 2 1 1 1 1 1 2 1 1 1 1 )
+  declare -aig board_points_row11=( 2 1 1 2 1 1 1 2 1 1 1 2 1 1 2 )
+  declare -aig board_points_row12=( 1 1 2 1 1 1 2 1 2 1 1 1 2 1 1 )
+  declare -aig board_points_row13=( 1 2 1 1 1 3 1 1 1 3 1 1 1 2 1 )
+  declare -aig board_points_row14=( 3 1 1 2 1 1 1 3 1 1 1 2 1 1 3 )
+
 
 
   ## -- Players
@@ -93,7 +128,7 @@ init_env() {
   ## Default to 1 player
   (( player_count <= 0 )) && player_count=1
 
-  ## Player hands
+  ## Player hand data
   eval "declare -ag  player{0..$((player_count - 1))}_hand='( )'"
   eval "declare -Ag  player{0..$((player_count - 1))}_hand_map='( )'"
   eval "declare -Aig player{0..$((player_count - 1))}_tile_counts='( )'"
@@ -136,12 +171,12 @@ print_board() {
 ## Prints a players hand
 print_hand() {
 
-  local hand="player${1:-0}_hand[@]"
+  local -n hand="player${1:-0}_hand"
   local -a hand_points=( )
 
-  echo "${!hand}"
+  echo "${hand[@]}"
 
-  for tile in "${!hand}"; do
+  for tile in "${hand[@]}"; do
     hand_points+=( "${tile_points[${tile}]}" )
   done
 
@@ -172,18 +207,20 @@ draw_tile() {
   ## Add tile to player's hand map
   hand_map[${tile}]+=":$((${#hand[@]} - 1))"
 
-  ## Decrement the tile counter
-  (( --tile_counts[${tile}] ))
-
   ## Increment player's tile counter
-  (( ++player${1:-0}_tile_counts[${tile}] ))
+  (( ++player"${1:-0}"_tile_counts[${tile}] ))
+
+  ## Decrement the tile counter
+  (( ! --tile_counts[${tile}] ))
+
+  return 0
 }
 
 
 
 
 ## Gets letter to play from player
-query_tile() {
+get_tile() {
 
   local -n player_tile_counts="player${1:-0}_tile_counts"
 
@@ -202,10 +239,24 @@ query_tile() {
 
 
 
-## Gets the position to play from player
-query_position() {
+## Check board position
+check_position() {
 
-  while IFS=$', \t\n' read -rp '>> Position (x,y): ' position[0] position[1]
+  local position_current="board_row$((position[1] - 1))[$((position[0] - 1))]"
+  if [[ ${!position_current} == [A-Z_] ]]; then
+    return 1
+  fi
+  return 0
+
+}
+
+
+
+
+## Gets the position to play from player
+get_position() {
+
+  while IFS=$', \t\n' read -rp '>> Position (x, y): ' position[0] position[1]
     [[ ${position[0]} = *[![:digit:]]* || ${position[1]} = *[![:digit:]]* ]] \
       || (( position[0] < 1 || position[0] > board_dim ||
             position[1] < 1 || position[1] > board_dim ))
@@ -235,7 +286,9 @@ play_tile() {
   declare -g "board_row$((position[1] - 1))[position[0] - 1]=${tile}"
 
   ## Update the player's score
-  declare -g player"${1:-0}"_score+=${tile_points[${tile}]}
+  declare -g player"${1:-0}"_score+=$((
+    tile_points[${tile}] * board_points_row$((position[1] - 1))[position[0] - 1]
+  ))
 
   ## Update the player's hand
   unset -v hand[${hand_map[${tile}]##*:}]
@@ -258,6 +311,7 @@ play_tile() {
 ## Executes a player's turn
 player_turn() {
 
+  local action=''
   local tile=''
   local -ai position=( )
   local -n hand="player${1:-0}_hand"
@@ -275,8 +329,13 @@ player_turn() {
   print_hand "${1:-0}"
 
   ## Get tile and position
-  query_tile "${1:-0}"
-  query_position "${1:-0}"
+  get_tile "${1:-0}"
+  while get_position "${1:-0}"
+    ! check_position
+  do
+    printf "*> (%d, %d) already occupied\n" "${position[@]}"
+  done
+
 
   ## Play the tile
   play_tile "${1:-0}"
