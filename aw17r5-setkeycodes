@@ -1,0 +1,48 @@
+#!/usr/bin/env sh
+
+## Define missing scancode-to-keycode mappings for the Alienware 17r5 laptop.
+##
+## NOTE: scancodes can be found in the output of ``dmesg --follow'' when
+##       unmapped keys are pressed.
+
+
+## Enable debugging output
+if test -n "${DEBUG}"; then
+  set -"${DEBUGOPTS:-"xv"}"
+fi
+
+
+## If called by non-root user, exit.
+if test "$(id -u)" -ne 0; then
+  printf '%s: Permission denied\n' "${0##*/}" 1>&2
+  exit 1
+fi
+
+
+## LHS Macros
+setkeycodes e011 126  # MacroX    <RWIN>
+setkeycodes e012 183  # Macro1    <FK13>
+setkeycodes e013 184  # Macro2    <FK14>
+setkeycodes e014 185  # Macro3    <FK15>
+setkeycodes e015 186  # Macro4    <FK16>
+setkeycodes e016 187  # Macro5    <FK17>
+
+## RHS Macros
+setkeycodes e017 188  # Macro6    <FK18>
+setkeycodes e018 189  # Macro7    <FK19>
+setkeycodes e01a 190  # Macro8    <FK20>
+setkeycodes e01b 191  # Macro9    <FK21>
+
+## Multimedia keys (Fn)
+setkeycodes e040 127  # F1        <MENU>
+setkeycodes e004 238  # F2        KEY_WLAN
+setkeycodes e000 148  # F6        KEY_PROG1   Fn lock to function keys
+setkeycodes e001 149  # F6        KEY_PROG2   Fn lock to multimedia keys
+#setkeycodes e03a 173  # F8        REFRESH
+setkeycodes e005 224  # F9        BRIGHTNESSDOWN
+setkeycodes e006 225  # F10       BRIGHTNESSUP
+setkeycodes 69   228  # F12       KBDILLUMTOGGLE
+
+
+## Done
+exit 0
