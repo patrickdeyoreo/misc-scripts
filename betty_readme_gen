@@ -1,0 +1,191 @@
+#!/usr/bin/env bash
+
+# Create a README from a project directory of betty-style C code.
+
+
+print_usage() {
+  cat -
+} << EOF
+usage: ${0##*/} [-o output-file] [-s pattern] [-x] [directory]
+EOF
+
+
+
+print_help() {
+  print_usage
+  cat -
+} << EOF
+  Create a README from a project directory of betty-style C code.
+
+  Use the contents of the specifed directory as input. If no directory
+  is specified, use the contents of the current directory.
+  
+  If a pattern is given with -s, only filenames that match the pattern
+  will be used for input. By default, the pattern is interpreted as a
+  shell-style pattern with zero or more wildcards and range expressions.
+  Matching is performed as if bash's extglob shell option were enabled.
+  If -x is given, the pattern is instead interpreted as an extended
+  regular expression (ERE) and matched accordingly.
+
+  If a filename is given with -o, output will be written to that file.
+  Otherwise, output will be written to stdout.
+
+  Output is in markdown formatted as a list:
+
+  * **<file>**
+    * <function> - <description>
+  ...
+
+  Options:
+    -o  <file>      write output to <file> instead of stdout
+    -s  <pattern>   only process files matching <pattern>
+    -x              interpret <pattern> as a regular expression (ERE)
+
+  Exit Status:
+  Returns 2 if invoked with invalid options (or -h).
+  Returns 1 if given a file or directory that cannot be accessed.
+  Otherwise, returns 0.
+EOF
+
+
+
+print_error() {
+  local IFS=''
+  printf '%s\n' "${0##*/}${*/#/: }"
+} 1>&2
+
+
+
+ck_directory() {
+  while (( $# )); do
+    [[ -e $1 ]] || {
+      print_error "$1" 'No such file or directory'
+      return 1
+    }
+    [[ -d $1 ]] || {
+      print_error "$1" 'Not a directory'
+      return 1
+    }
+    [[ -r $1 && -x $1 ]] || {
+      print_error "Cannot open directory $1" 'Permission denied'
+      return 1
+    }
+    shift
+  done
+}
+
+
+
+ck_output_file() {
+  if [[ -e $1 ]]; then
+    [[ -d $1 ]] && {
+      print_error "$1" "Is a directory"
+      return 1
+    }
+    [[ -w $1 ]] || {
+      print_error "Cannot write to output file $1" 'Permission denied'
+      return 1
+    }
+  elif [[ -e ${1%/*} ]]; then
+    [[ -w ${1%/*} && -x ${1%/*} ]] || {
+      print_error "Cannot open output file $1" 'Permission denied'
+      return 1
+    }
+  else
+    print_error "Cannot open output file $1" 'No such file or directory'
+    return 1
+  fi
+}
+
+
+
+declare -a args=( )
+declare -A opts=( )
+optstring=':o:s:xh'
+OPTIND=1
+o=''
+i=0
+
+
+while getopts "${optstring}" o; do
+  case ${o} in
+  h)
+    print_help
+    exit 2
+    ;;
+  :)
+    print_error "'${OPTARG}'" 'option requires an argument'
+    print_usage 1>&2
+    exit 2
+    ;;
+  \?)
+    print_error "'${OPTARG}'" 'invalid option'
+    print_usage 1>&2
+    exit 2
+    ;;
+  *)
+    opts+=( [${o}]="${OPTARG}" )
+    ;;
+  esac
+done
+
+
+shift "$(( OPTIND - 1 ))"
+
+case $# in
+  0) set -- .
+    ;&
+  1)
+    ck_directory "$1" && cd "$1" || exit
+    ;;
+  *)
+    print_error 'too many arguments'
+    exit 2
+    ;;
+esac
+
+
+for _ in ./*; do
+  [[ -f $_ ]] && args+=( "${_#./}" )
+done
+
+
+if [[ -n ${opts[o]+_} ]]; then
+  ck_output_file "${opts[o]}" && exec 1>"${opts[o]}" || exit
+fi
+
+
+
+if [[ -n ${opts[s]+_} ]]; then
+  if [[ -n ${opts[x]+_} ]]; then
+    for (( i = ${#args[@]} - 1; i >= 0; --i )); do
+      [[ ${args[i]} =~ ${opts[s]} ]] || unset -v 'args[i]'
+    done
+  else
+    for (( i = ${#args[@]} - 1; i >= 0; --i )); do
+      [[ ${args[i]} == ${opts[s]} ]] || unset -v 'args[i]'
+    done
+  fi
+fi
+
+args=( "${args[@]}" )
+
+
+for (( i = 0; i < ${#args[@]}; ++i )); do
+  printf '* **%s**\n' "${args[i]//_/\\_}"
+  sed -E -n '
+/^\/\*\* *$/!b
+: next
+n
+s/^ \* *([[:alpha:]_][[:alnum:]_]*) *- *(.*[^ ]?) *$/  * \1 - \2/
+t done
+/^ \*\/ *$/b
+b next
+: done
+s/_/\\_/g
+p
+' "${args[i]}"
+  if (( i < ${#args[@]} - 1 )); then
+    printf '\n'
+  fi
+done
