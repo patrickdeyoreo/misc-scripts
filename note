@@ -46,7 +46,7 @@ assign_by_ref()
   [[ $1 =~ ([[:alpha:]_][[:alnum:]_]*)(\[([[:print:]]+)\])? ]] ||
     return
   if [[ ${BASH_REMATCH[2]} == ?(\[*( )+([[:digit:]])*( )]) ]]; then
-    eval "$1"'="$2"'
+    eval "$1"'=$2'
   elif [[ ${!BASH_REMATCH[1]@a} == *A* ]]; then
     eval "${BASH_REMATCH[1]}['${BASH_REMATCH[3]//\'/\'\\\'\'}']"'=$2'
   fi
