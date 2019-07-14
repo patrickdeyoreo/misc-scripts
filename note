@@ -104,18 +104,17 @@ get_opts_by_ref()
 
 
 ###
-## get_timestamp_by_ref - assign a timestamp from a note to a variable
+## list - list notes
 ##
-## usage: get_timestamp_by_ref name file
+## usage: list
 ##
-## @name: the name of a variable
-## @file: the file to get a timestamp from
-##
-## Return: 0 unless name is an invalid identifier
+## Return: Always 0
 ###
-note::get_timestamp_by_ref()
+note::list()
 {
-  assign_by_ref "$1" "$(date --date="$2" +"${NOTE_TIME_FMT}")"
+  for _ in "${NOTES[@]##*/}"; do
+    printf '>> %s\n' "$(date --date="$_" +"${NOTE_TIME_FMT}")"
+  done
 }
 
 
@@ -131,7 +130,7 @@ note::new()
   local -
   set -o noclobber
 
-  local tempfile
+  local tempfile=''
 
   trap -- 'echo; return 130' SIGINT
   trap -- 'trap SIGINT; '"$(
@@ -144,11 +143,11 @@ note::new()
 
   cat >| "${tempfile}"
 
-  until cat "${tempfile}" 1>"${NOTE_HOME}/$(printf "%(${NOTE_NAME_FMT})T")"; do
+  until cat "${tempfile}" 1> "${NOTE_HOME}/$(printf "%(${NOTE_NAME_FMT})T")"; do
     [[ -d ${NOTE_HOME} ]] ||
-      errmsg 2>&1 "${0##*/}" "${NOTE_HOME}" 'note directory has been removed'
+      errmsg 2>&1 "${0##*/}" "${NOTE_HOME}" 'directory has been removed'
     [[ -r ${NOTE_HOME} && -w ${NOTE_HOME} && -x ${NOTE_HOME} ]] ||
-      errmsg 2>&1 "${0##*/}" "${NOTE_HOME}" 'cannot access note directory'
+      errmsg 2>&1 "${0##*/}" "${NOTE_HOME}" 'cannot access directory'
   done 1>&2 2>/dev/null
 }
 
@@ -162,27 +161,8 @@ note::new()
 ###
 note::print()
 {
-  local timestamp
   for _ in "${NOTES[@]}"; do
-    note::get_timestamp_by_ref 'timestamp' "${_##*/}"
-    printf '>> %s\n%s\n' "${timestamp}" "$(< "${NOTE_HOME}/$_")"
-  done
-}
-
-
-###
-## list - list notes
-##
-## usage: list
-##
-## Return: Always 0
-###
-note::list()
-{
-  local timestamp
-  for _ in "${NOTES[@]##*/}"; do
-    note::get_timestamp_by_ref 'timestamp' "$_"
-    printf '>> %s\n' "${timestamp}"
+    printf '>> %s\n%s\n' "$(date -d "${_##*/}" +"${NOTE_TIME_FMT}")" "$(< "$_")"
   done
 }
 
@@ -201,7 +181,7 @@ note::remove()
 ###
 ## search - search for a note
 ##
-## usage: search name
+## usage: search
 ###
 note::search()
 {
@@ -210,7 +190,18 @@ note::search()
 
 
 ###
-## main - run it
+## usage - print a short usage synopsis
+##
+## usage: usage
+###
+note::usage()
+{
+  printf 'usage: %s [(l)ist|(n)ew|(p)rint|(r)emove|(s)earch]\n' "${0##*/}"
+}
+
+
+###
+## main - start it up
 ##
 ## usage: main [option ...] [command ...]
 ##
@@ -228,50 +219,53 @@ main()
   trap -- 'trap - ERR RETURN' RETURN
 
   local NOTE_HOME="${NOTE_HOME:-${XDG_DATA_HOME:-${HOME}/.local/share}/note}"
-  
+
   local NOTE_TIME_FMT="${NOTE_TIME_FMT:-%a %_d %b %Y %_I:%M %p}"
 
   local NOTE_NAME_FMT='%FT%T'
-
+  
   local NOTES=( "${NOTE_HOME}"/* )
+
+  [[ -e ${NOTES[0]} ]] || NOTES=( )
 
   if [[ ! -d ${NOTE_HOME} ]]; then
     mkdir -m 0700 -p "${NOTE_HOME}" ||
       errmsg "${0##*/}" "${NOTE_HOME}" "cannot create directory"
   fi
 
-  if (( ${#NOTES[@]} == 1)); then
-    [[ -f ${NOTES[0]} ]] ||
-      NOTES=( )
-  fi
-
   case ${1^} in
-    N*)
-      if [[ NEW == "${1^^}"* ]]; then
-        note::new "${@:2}"
-      fi
-      ;;
-    P*)
-      if [[ PRINT == "${1^^}"* ]]; then
-        note::print "${@:2}"
-      fi
+    H*)
+      [[ HELP == "${1^^}"* ]] &&
+        note::usage
       ;;
     L*)
-      if [[ LIST == "${1^^}"* ]]; then
-        note::list "${@:2}"
-      fi
+      [[ LIST == "${1^^}"* ]] &&
+        note::list
+      ;;
+    N*)
+      [[ NEW == "${1^^}"* ]] &&
+        note::new
+      ;;
+    P*)
+      [[ PRINT == "${1^^}"* ]] &&
+        note::print
       ;;
     R*)
-      if [[ REMOVE == "${1^^}"* ]]; then
-        note::remove "${@:2}"
-      fi
+      [[ REMOVE == "${1^^}"* ]] &&
+        note::remove
       ;;
     S*)
-      if [[ SEARCH == "${1,,}"* ]]; then
-        note::search "${@:2}"
+      [[ SEARCH == "${1^^}"* ]] &&
+        note::search
+      ;; 
+    * )
+      if (( $# )); then
+        errmsg "${0##*/}" "$1" 'unrecognized command'
       fi
-      ;;
+      note::usage 1>&2
+      return 2
   esac
+
 }
 
 
