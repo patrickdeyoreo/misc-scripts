@@ -1,0 +1,171 @@
+#!/usr/bin/env bash
+#
+## save and display notes
+###
+
+
+###
+## errmsg - print an error message
+##
+## usage: errmsg [name ...] error
+##
+## @name: program(s), function(s), or value(s) to prepend
+## @error: the error message to print
+###
+note::errmsg()
+{
+  trap "$(
+    printf "%s\nreturn $?" "$(
+      : "$(trap -p RETURN)"
+      printf '%s' "${_:-trap - RETURN}"
+    )"
+  )" RETURN
+  if (( $# )); then
+    if (( $# > 1 )); then
+      printf '%s: ' "${@:1:($# - 1)}"
+    fi
+    printf '%s\n' "${!#}"
+  fi 1>&2
+}
+
+
+###
+## assign_by_ref - assign a value to a variable by reference
+##
+## usage: assign_by_ref name [value]
+##
+## @name: the name of the variable
+## @value: the value to assign
+###
+note::assign_by_ref()
+{
+  [[ $1 =~ ([[:alpha:]_][[:alnum:]_]*)(\[([[:print:]]+)\])? ]] ||
+    return
+  if [[ ${BASH_REMATCH[2]} == ?(\[*( )+([[:digit:]])*( )]) ]]; then
+    eval "$1"'="$2"'
+  elif [[ ${!BASH_REMATCH[1]@a} == *A* ]]; then
+    eval "${BASH_REMATCH[1]}['${BASH_REMATCH[3]//\'/\'\\\'\'}']"'=$2'
+  fi
+}
+
+
+###
+## get_argc_by_ref - assign argument count to a variable by reference
+##
+## usage: get_argc_by_ref name [arg ...]
+##
+## @name: the name of a variable
+## @arg: arg(s) to count
+###
+note::get_argc_by_ref()
+{
+  assign_by_ref "$1" "$(( $# - 1 ))"
+}
+
+
+###
+## get_opts_by_ref - assign options to an associative array by reference
+##
+## usage: get_opts_by_ref name
+##
+## @name: the name of an associative array
+###
+note::get_opts_by_ref()
+{
+  assign_by_ref "$1" "$(( $# - 1 ))"
+}
+
+
+note::new()
+{
+  local -
+  set -o noclobber
+
+  until { cat > "${NOTE_HOME}/$(printf '%(%Y%m%dT%H%M%S)T')"; } 2>/dev/null; do
+    [[ -d ${NOTE_HOME} ]] ||
+      errmsg "${0##*/}" "${NOTE_HOME}" 'note directory has been removed'
+    [[ -r ${NOTE_HOME} && -w ${NOTE_HOME} && -x ${NOTE_HOME} ]] ||
+      errmsg "${0##*/}" "${NOTE_HOME}" 'cannot access note directory'
+  done
+}
+
+
+note::print()
+{
+  for _ in "${NOTES[@]}"; do
+    printf '>> %s\n' "${_##*/}"
+    cat "${NOTE_HOME}/$_"
+  done
+}
+
+
+note::list()
+{
+  printf '%q\n' "${NOTES[@]##*/}"
+}
+
+
+note::remove()
+{
+  echo 'sorry, this is not implemented yet\n'
+}
+
+
+note::search()
+{
+  echo 'sorry, this is not implemented yet\n'
+}
+
+
+note::main()
+{
+  local -
+  set -o errtrace
+
+  trap -- 'return $?' ERR
+  trap -- 'trap - RETURN; trap - ERR' RETURN
+
+  local NOTE_HOME="${NOTE_HOME:-${XDG_DATA_HOME:-${HOME}/.local/share}/note}"
+  local NOTES=( "${NOTE_HOME}"/* )
+  
+  if [[ ! -d ${NOTE_HOME} ]]; then
+    mkdir -m 0700 -p "${NOTE_HOME}" ||
+      errmsg "${0##*/}" "cannot create note directory"
+  fi
+
+  if (( ${#NOTES[@]} == 1)); then
+    [[ -f ${NOTES[0]} ]] ||
+      NOTES=( )
+  fi
+
+  case ${1^} in
+    N*)
+      if [[ NEW == "${1^^}"* ]]; then
+        note::new "${@:2}"
+      fi
+      ;;
+    P*)
+      if [[ PRINT == "${1^^}"* ]]; then
+        note::print "${@:2}"
+      fi
+      ;;
+    L*)
+      if [[ LIST == "${1^^}"* ]]; then
+        note::list "${@:2}"
+      fi
+      ;;
+    R*)
+      if [[ REMOVE == "${1^^}"* ]]; then
+        note::remove "${@:2}"
+      fi
+      ;;
+    S*)
+      if [[ SEARCH == "${1,,}"* ]]; then
+        note::search "${@:2}"
+      fi
+      ;;
+  esac
+}
+
+
+note::main "$@"
