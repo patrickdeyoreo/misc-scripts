@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-## save and display notes
+## create and display simple notes
 ###
 
 
@@ -11,16 +11,18 @@
 ##
 ## @name: program(s), function(s), or value(s) to prepend
 ## @error: the error message to print
+##
+## Return: the exit status of the command before this function
 ###
-note::errmsg()
+errmsg()
 {
   trap "$(
-    printf "%s\nreturn $?" "$(
-      : "$(trap -p RETURN)"
-      printf '%s' "${_:-trap - RETURN}"
-    )"
+  printf "%s\nreturn $?" "$(
+    : "$(trap -p RETURN)"
+    printf '%s' "${_:-trap RETURN}"
+  )"
   )" RETURN
-  if (( $# )); then
+  if (( $# > 0 )); then
     if (( $# > 1 )); then
       printf '%s: ' "${@:1:($# - 1)}"
     fi
@@ -34,10 +36,12 @@ note::errmsg()
 ##
 ## usage: assign_by_ref name [value]
 ##
-## @name: the name of the variable
+## @name: the name of a variable
 ## @value: the value to assign
+##
+## Return: 0 unless name is an invalid identifier
 ###
-note::assign_by_ref()
+assign_by_ref()
 {
   [[ $1 =~ ([[:alpha:]_][[:alnum:]_]*)(\[([[:print:]]+)\])? ]] ||
     return
@@ -56,8 +60,10 @@ note::assign_by_ref()
 ##
 ## @name: the name of a variable
 ## @arg: arg(s) to count
+##
+## Return: 0 unless name is an invalid identifier
 ###
-note::get_argc_by_ref()
+get_argc_by_ref()
 {
   assign_by_ref "$1" "$(( $# - 1 ))"
 }
@@ -66,71 +72,172 @@ note::get_argc_by_ref()
 ###
 ## get_opts_by_ref - assign options to an associative array by reference
 ##
-## usage: get_opts_by_ref name
+## usage: get_opts_by_ref name [arg ...]
 ##
-## @name: the name of an associative array
+## @name: the name of an associative array to store options with arguments
+## @arg: argument(s) to parse for options
+##
+## Return: 2 upon encountering an invalid option or missing argument,
+## otherwise 0 unless name is an invalid identifier
 ###
-note::get_opts_by_ref()
+get_opts_by_ref()
 {
-  assign_by_ref "$1" "$(( $# - 1 ))"
+  local OPTIND=1
+  local optstring=${optstring:-f:h}
+  local opt=''
+
+  set -- "${@:2}" "$1"
+
+  while getopts ":${optstring#:}" opt; do
+    case "${opt}" in
+      : ) errmsg "${0##*/}" "${OPTARG}" 'option requires an argument'
+          return 2
+          ;;
+      \?) errmsg "${0##*/}" "${OPTARG}" 'invalid option'
+          return 2
+          ;;
+      * ) assign_by_ref "${!#}[${opt}]" "${OPTARG}"
+          ;;
+    esac
+  done
 }
 
 
+###
+## get_timestamp_by_ref - assign a timestamp from a note to a variable
+##
+## usage: get_timestamp_by_ref name file
+##
+## @name: the name of a variable
+## @file: the file to get a timestamp from
+##
+## Return: 0 unless name is an invalid identifier
+###
+note::get_timestamp_by_ref()
+{
+  assign_by_ref "$1" "$(date --date="${2:0:8} ${2:9:15}" "+${NOTE_TIME_FMT}")"
+}
+
+
+###
+## new - create a note
+##
+## usage: new
+##
+## Return: 0 unless note cannot be written
+###
 note::new()
 {
   local -
   set -o noclobber
 
-  until { cat > "${NOTE_HOME}/$(printf '%(%Y%m%dT%H%M%S)T')"; } 2>/dev/null; do
+  local tempfile
+
+  trap -- 'echo; return 130' SIGINT
+  trap -- 'trap SIGINT; '"$(
+  : "$(trap -p RETURN)"
+  printf '%s' "${_:-trap RETURN}"
+  )"$'\nrm -rf "${tempfile}" || true' RETURN
+  trap 'rm -rf "${tempfile}" || true' EXIT
+
+  tempfile=$(mktemp --tmpdir "${0##*/}-XXXXXX")
+
+  cat >| "${tempfile}"
+
+  until cat "${tempfile}" 1>"${NOTE_HOME}/$(printf "%(${NOTE_NAME_FMT})T")"; do
     [[ -d ${NOTE_HOME} ]] ||
-      errmsg "${0##*/}" "${NOTE_HOME}" 'note directory has been removed'
+      errmsg 2>&1 "${0##*/}" "${NOTE_HOME}" 'note directory has been removed'
     [[ -r ${NOTE_HOME} && -w ${NOTE_HOME} && -x ${NOTE_HOME} ]] ||
-      errmsg "${0##*/}" "${NOTE_HOME}" 'cannot access note directory'
-  done
+      errmsg 2>&1 "${0##*/}" "${NOTE_HOME}" 'cannot access note directory'
+  done 1>&2 2>/dev/null
 }
 
 
+###
+## print - print notes
+##
+## usage: print
+##
+## Return: 0 unless notes cannot be accessed
+###
 note::print()
 {
+  local timestamp
   for _ in "${NOTES[@]}"; do
-    printf '>> %s\n' "${_##*/}"
-    cat "${NOTE_HOME}/$_"
+    note::get_timestamp_by_ref 'timestamp' "${_##*/}"
+    printf '>> %s\n%s\n' "${timestamp}" "$(< "${NOTE_HOME}/$_")"
   done
 }
 
 
+###
+## list - list notes
+##
+## usage: list
+##
+## Return: Always 0
+###
 note::list()
 {
-  printf '%q\n' "${NOTES[@]##*/}"
+  local timestamp
+  for _ in "${NOTES[@]##*/}"; do
+    note::get_timestamp_by_ref 'timestamp' "$_"
+    printf '>> %s\n' "${timestamp}"
+  done
 }
 
 
+###
+## remove - remove a note
+##
+## usage: remove
+###
 note::remove()
 {
   echo 'sorry, this is not implemented yet\n'
 }
 
 
+###
+## search - search for a note
+##
+## usage: search name
+###
 note::search()
 {
   echo 'sorry, this is not implemented yet\n'
 }
 
 
-note::main()
+###
+## main - run it
+##
+## usage: main [option ...] [command ...]
+##
+## @option: option(s) to process
+## @command: command(s) to execute
+##
+## Return: 0 upon successful execution; non-zero otherwise
+###
+main()
 {
   local -
   set -o errtrace
 
-  trap -- 'return $?' ERR
-  trap -- 'trap - RETURN; trap - ERR' RETURN
+  trap -- 'return "$?"' ERR
+  trap -- 'trap - ERR RETURN' RETURN
 
   local NOTE_HOME="${NOTE_HOME:-${XDG_DATA_HOME:-${HOME}/.local/share}/note}"
-  local NOTES=( "${NOTE_HOME}"/* )
   
+  local NOTES=( "${NOTE_HOME}"/* )
+
+  local NOTE_NAME_FMT='%FT%T'
+
+  local NOTE_TIME_FMT='%a %_d %b %Y %_I:%M %p'
+
   if [[ ! -d ${NOTE_HOME} ]]; then
     mkdir -m 0700 -p "${NOTE_HOME}" ||
-      errmsg "${0##*/}" "cannot create note directory"
+      errmsg "${0##*/}" "${NOTE_HOME}" "cannot create directory"
   fi
 
   if (( ${#NOTES[@]} == 1)); then
@@ -168,4 +275,4 @@ note::main()
 }
 
 
-note::main "$@"
+main "$@"
