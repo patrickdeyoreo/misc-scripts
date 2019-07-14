@@ -1,92 +1,43 @@
 #!/usr/bin/env sh
 
-# A posix-friendly tee hack for emulating process substitution.
-# Passes input from stdin to each of the commands given as arguments.
-# usage: shtee [command] ...
+# A posix-friendly tee hack for emulating process substitution
+# usage: shtee [command ...]
 
+if test -n "${DEBUG+_}"; then
+  set "-${DEBUG_OPTS:-xv}"
+fi
 
+test "$#" -gt 0 || { tee >/dev/null ; exit 0 ; }
 
-# Initialize variables, set traps, and make an empty directory
-init_env() {
+unset -v datadir && unset -v id && unset -v id_fmt || exit 1
 
-    # Save shell options and set 'errexit'
-    local -
-    set -e
+trap 'rm -rf "${datadir}"; trap - INT;  kill -INT  "$$"' INT
+trap 'rm -rf "${datadir}"; trap - HUP;  kill -HUP  "$$"' HUP
+trap 'rm -rf "${datadir}"; trap - ABRT; kill -ABRT "$$"' ABRT
+trap 'rm -rf "${datadir}"; trap - PIPE; kill -PIPE "$$"' PIPE
+trap 'rm -rf "${datadir}"; trap - ALRM; kill -ALRM "$$"' ALRM
+trap 'rm -rf "${datadir}"; trap - TERM; kill -TERM "$$"' TERM 
+trap 'rm -rf "${datadir}"' EXIT
 
-    # Clear the variables we're going to use
-    unset -v workdir
-    unset -v id_fmt
-    unset -v index
+datadir=$(mktemp -d --tmpdir "${0##*/}.XXXXXXXX") &&
+  mkfifo -- "${datadir}/-" ||
+  exit 1
 
-    # Set a trap to remove our files upon exit
-    trap 'rm -rf "${workdir}"' EXIT
+id=
+id_fmt=%0${##}d
 
-    # Make an empty directory to hold our files
-    workdir="$(mktemp -d --tmpdir "$$-XXXXXXXX")"
-
-    # Define file ID format for proper sorting
-    id_fmt="%0${##}d"
-
-    # Initialize a counter to iterate over args
-    index=0
-}
-
-
-
-# Create necessary pipes and start the respective  commands
-prepare_pipes() {
-
-  # Make a pipe to avoid extra subshells
-  mkfifo "${workdir}/@"
-
-  # Start each command provided as an argument
-  while test "${index}" -lt "$#"; do
-  
-      # Generate file id based on current argument index
-      printf "${id_fmt}\n" $((index + 1)) &
-  
-      # Read incremented index (formatted id)
-      read -r index
-  
-      # Make a pipe for the command currently being processed
-      if mkfifo "${workdir}/-${index}"; then
-
-        # Start the command in a subshell reading from its pipe
-        ( eval 'eval "${'"${index}"'}"' 0< "${workdir}/-${index}" 1> "${workdir}/+${index}" ) &
-      fi
-
-  done 3<> "${workdir}/@" 0<&3 1>&3
-}
-
-
-
-# Evaluate each command with the input available on stdin
-eval_commands() {
-
-  # tee stdin to our pipes and wait for the jobs to finish
-  tee "${workdir}"/-* 1> /dev/null
-  wait
-
-  # Print all captured output
-  cat "${workdir}"/+*
-}
-
-
-
-# Put it all together
-main() {
-  if test "$#" -ne 0; then
-    init_env "$@"
-    prepare_pipes "$@"
-    eval_commands "$@"
+while test "$#" -gt 0; do
+  printf -- "${id_fmt}\n" "$(( ${id:-0} + 1 ))"
+  read -- id
+  if mkfifo -- "${datadir}/${id}-0"; then
+    (eval "$1") <"${datadir}/${id}-0" >"${datadir}/+${id}-1" &
   fi
-}
+  shift
+done <>"${datadir}/-" >&0
 
+tee -- "${datadir}"/*-0 >/dev/null
+wait
 
+cat "${datadir}"/*-1
 
-# Run it.
-main "$@"
-
-
-# Done
 exit 0
