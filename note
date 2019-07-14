@@ -115,7 +115,7 @@ get_opts_by_ref()
 ###
 note::get_timestamp_by_ref()
 {
-  assign_by_ref "$1" "$(date --date="${2:0:8} ${2:9:15}" "+${NOTE_TIME_FMT}")"
+  assign_by_ref "$1" "$(date --date="$2" +"${NOTE_TIME_FMT}")"
 }
 
 
@@ -229,11 +229,11 @@ main()
 
   local NOTE_HOME="${NOTE_HOME:-${XDG_DATA_HOME:-${HOME}/.local/share}/note}"
   
-  local NOTES=( "${NOTE_HOME}"/* )
+  local NOTE_TIME_FMT="${NOTE_TIME_FMT:-%a %_d %b %Y %_I:%M %p}"
 
   local NOTE_NAME_FMT='%FT%T'
 
-  local NOTE_TIME_FMT='%a %_d %b %Y %_I:%M %p'
+  local NOTES=( "${NOTE_HOME}"/* )
 
   if [[ ! -d ${NOTE_HOME} ]]; then
     mkdir -m 0700 -p "${NOTE_HOME}" ||
