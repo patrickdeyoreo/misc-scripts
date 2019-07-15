@@ -39,16 +39,21 @@ errmsg()
 ## @name: the name of a variable
 ## @value: the value to assign
 ##
-## Return: 0 unless name is an invalid identifier
+## Return: 1 if name is an invalid identifier or an array with a bad subscript,
+## otherwise 0
 ###
 assign_by_ref()
 {
-  [[ $1 =~ ([[:alpha:]_][[:alnum:]_]*)(\[([[:print:]]+)\])? ]] ||
+  [[ $1 =~ ^([[:alpha:]_][[:alnum:]_]*)(\[(.*)])?$ ]] || 
+    errmsg "${0##*/}" "$1" 'not a valid identifier'   ||
     return
-  if [[ ${BASH_REMATCH[2]} == ?(\[*( )+([[:digit:]])*( )]) ]]; then
+  if [[ ${BASH_REMATCH[2]} = ?(\[*([[:blank:]])+([[:digit:]])*([[:blank:]])]) ]]
+  then
     eval "$1"'=$2'
-  elif [[ ${!BASH_REMATCH[1]@a} == *A* ]]; then
-    eval "${BASH_REMATCH[1]}['${BASH_REMATCH[3]//\'/\'\\\'\'}']"'=$2'
+  elif [[ ${!BASH_REMATCH[1]@a} = *A* ]]; then
+    eval "${BASH_REMATCH[1]}[${BASH_REMATCH[3]@Q}]"'=$2'
+  else
+    errmsg "${0#*/}" "${1%%[*}[${BASH_REMATCH[3]@Q}]" 'bad array subscript'
   fi
 }
 
@@ -61,7 +66,8 @@ assign_by_ref()
 ## @name: the name of a variable
 ## @arg: arg(s) to count
 ##
-## Return: 0 unless name is an invalid identifier
+## Return: 1 if name is an invalid identifier or an array with a bad subscript,
+## otherwise 0
 ###
 get_argc_by_ref()
 {
@@ -74,21 +80,21 @@ get_argc_by_ref()
 ##
 ## usage: get_opts_by_ref name [arg ...]
 ##
-## @name: the name of an associative array to store options with arguments
+## @name: the name of an associative array to store options & arguments
 ## @arg: argument(s) to parse for options
 ##
-## Return: 2 upon encountering an invalid option or missing argument,
-## otherwise 0 unless name is an invalid identifier
+## Return: 2 if an invalid option is found or an option is missing an argument,
+## 1 if name is an invalid identifier or an array with a bad subscript,
+## otherwise 0
 ###
 get_opts_by_ref()
 {
-  local OPTIND=1
-  local optstring=${optstring:-f:h}
+  local optstring="${optstring}"
   local opt=''
 
   set -- "${@:2}" "$1"
 
-  while getopts ":${optstring#:}" opt; do
+  while getopts ":${optstring}" opt; do
     case "${opt}" in
       : ) errmsg "${0##*/}" "${OPTARG}" 'option requires an argument'
           return 2
@@ -108,12 +114,16 @@ get_opts_by_ref()
 ##
 ## usage: list
 ##
-## Return: Always 0
+## Return: 0 unless note directory cannot be accessed
 ###
 note::list()
 {
-  for _ in "${NOTES[@]##*/}"; do
-    printf '>> %s\n' "$(date --date="$_" +"${NOTE_TIME_FMT}")"
+  local size="${#NOTES[@]}"
+
+  for _ in "${!NOTES[@]}"; do
+    printf '(%0'"${#size}"'d) %s\n' "$_" "$(
+    date -d "${NOTES[_]##*/}" +"${NOTE_TIME_FMT}"
+    )"
   done
 }
 
@@ -141,14 +151,14 @@ note::new()
 
   tempfile=$(mktemp --tmpdir "${0##*/}-XXXXXX")
 
-  cat >| "${tempfile}"
+  cat 1>|"${tempfile}"
 
-  until cat "${tempfile}" 1> "${NOTE_HOME}/$(printf "%(${NOTE_NAME_FMT})T")"; do
+  until cat "${tempfile}" 1>"${NOTE_HOME}/$(printf "%(${NOTE_NAME_FMT})T")"; do
     [[ -d ${NOTE_HOME} ]] ||
-      errmsg 2>&1 "${0##*/}" "${NOTE_HOME}" 'directory has been removed'
+      errmsg 2>&1 1>&3 "${0##*/}" "${NOTE_HOME}" 'directory has been removed'
     [[ -r ${NOTE_HOME} && -w ${NOTE_HOME} && -x ${NOTE_HOME} ]] ||
-      errmsg 2>&1 "${0##*/}" "${NOTE_HOME}" 'cannot access directory'
-  done 1>&2 2>/dev/null
+      errmsg 2>&1 1>&3 "${0##*/}" "${NOTE_HOME}" 'cannot access directory'
+  done 3>&1 1>&2 2>/dev/null
 }
 
 
@@ -161,8 +171,15 @@ note::new()
 ###
 note::print()
 {
-  for _ in "${NOTES[@]}"; do
-    printf '>> %s\n%s\n' "$(date -d "${_##*/}" +"${NOTE_TIME_FMT}")" "$(< "$_")"
+  local size="${#NOTES[@]}"
+
+  for _ in "${!NOTES[@]}"; do
+    if (( _ > 0 )); then
+      printf '\n' "$_"
+    fi
+    printf '(%0'"${#size}"'d) %s\n%s\n' "$_" "$(
+    date -d "${NOTES[_]##*/}" +"${NOTE_TIME_FMT}"
+    )" "$(< "${NOTES[_]}")"
   done
 }
 
@@ -174,7 +191,7 @@ note::print()
 ###
 note::remove()
 {
-  echo 'sorry, this is not implemented yet\n'
+  printf 'sorry, this is not implemented yet\n'
 }
 
 
@@ -185,7 +202,7 @@ note::remove()
 ###
 note::search()
 {
-  echo 'sorry, this is not implemented yet\n'
+  printf 'sorry, this is not implemented yet\n'
 }
 
 
@@ -210,17 +227,22 @@ note::usage()
 ##
 ## Return: 0 upon successful execution; non-zero otherwise
 ###
-main()
+note::main()
 {
   local -
   set -o errtrace
 
+  trap -- "$(
+  : "$(trap -p ERR)"
+  printf '%s\n' "${_:-trap ERR}"
+  : "$(trap -p RETURN)"
+  printf '%s\n' "${_:-trap RETURN}"
+  )" RETURN
   trap -- 'return "$?"' ERR
-  trap -- 'trap - ERR RETURN' RETURN
 
   local NOTE_HOME="${NOTE_HOME:-${XDG_DATA_HOME:-${HOME}/.local/share}/note}"
 
-  local NOTE_TIME_FMT="${NOTE_TIME_FMT:-%a %_d %b %Y %_I:%M %p}"
+  local NOTE_TIME_FMT="${NOTE_TIME_FMT:-%A %_d %B %Y %_I:%M %p}"
 
   local NOTE_NAME_FMT='%FT%T'
   
@@ -235,38 +257,39 @@ main()
 
   case ${1^} in
     H*)
-      [[ HELP == "${1^^}"* ]] &&
-        note::usage
-      ;;
+      [[ HELP != "${1^^}"* ]] ||
+        { note::usage "$@"  && return ; }
+      ;;&
     L*)
-      [[ LIST == "${1^^}"* ]] &&
-        note::list
-      ;;
+      [[ LIST != "${1^^}"* ]] ||
+        { note::list "$@"   && return ; }
+      ;;&
     N*)
-      [[ NEW == "${1^^}"* ]] &&
-        note::new
-      ;;
+      [[ NEW != "${1^^}"* ]] ||
+        { note::new "$@"    && return ; }
+      ;;&
     P*)
-      [[ PRINT == "${1^^}"* ]] &&
-        note::print
-      ;;
+      [[ PRINT != "${1^^}"* ]] ||
+        { note::print "$@"  && return ; }
+      ;;&
     R*)
-      [[ REMOVE == "${1^^}"* ]] &&
-        note::remove
-      ;;
+      [[ REMOVE != "${1^^}"* ]] ||
+        { note::remove "$@" && return ; }
+      ;;&
     S*)
-      [[ SEARCH == "${1^^}"* ]] &&
-        note::search
-      ;; 
+      [[ SEARCH != "${1^^}"* ]] ||
+        { note::search "$@" && return ; }
+      ;;&
     * )
       if (( $# )); then
         errmsg "${0##*/}" "$1" 'unrecognized command'
       fi
       note::usage 1>&2
       return 2
+      ;;
   esac
 
 }
 
 
-main "$@"
+note::main "$@"
