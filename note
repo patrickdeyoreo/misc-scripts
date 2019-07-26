@@ -53,25 +53,9 @@ assign_by_ref()
   elif [[ ${!BASH_REMATCH[1]@a} = *A* ]]; then
     eval "${BASH_REMATCH[1]}[${BASH_REMATCH[3]@Q}]"'=$2'
   else
-    errmsg "${0#*/}" "${1%%[*}[${BASH_REMATCH[3]@Q}]" 'bad array subscript'
+    errmsg "${0#*/}" "${BASH_REMATCH[1]}[${BASH_REMATCH[3]@Q}]" \
+      'bad array subscript'
   fi
-}
-
-
-###
-## get_argc_by_ref - assign argument count to a variable by reference
-##
-## usage: get_argc_by_ref name [arg ...]
-##
-## @name: the name of a variable
-## @arg: arg(s) to count
-##
-## Return: 1 if name is an invalid identifier or an array with a bad subscript,
-## otherwise 0
-###
-get_argc_by_ref()
-{
-  assign_by_ref "$1" "$(( $# - 1 ))"
 }
 
 
