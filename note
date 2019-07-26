@@ -241,29 +241,47 @@ note::main()
 
   case ${1^} in
     H*)
-      [[ HELP != "${1^^}"* ]] ||
-        { note::usage "$@"  && return ; }
+      if [[ HELP == "${1^^}"* ]]; then
+        note::usage "$@"
+        return
+      fi
       ;;&
+
     L*)
-      [[ LIST != "${1^^}"* ]] ||
-        { note::list "$@"   && return ; }
+      if [[ LIST == "${1^^}"* ]]; then
+        note::list "$@"
+        return
+      fi
       ;;&
+
     N*)
-      [[ NEW != "${1^^}"* ]] ||
-        { note::new "$@"    && return ; }
+      if [[ NEW == "${1^^}"* ]]; then
+        note::new "$@"
+        return
+      fi
       ;;&
+
     P*)
-      [[ PRINT != "${1^^}"* ]] ||
-        { note::print "$@"  && return ; }
+      if [[ PRINT == "${1^^}"* ]]; then
+        note::print "$@"
+        return
+      fi
       ;;&
+
     R*)
-      [[ REMOVE != "${1^^}"* ]] ||
-        { note::remove "$@" && return ; }
+      if [[ REMOVE == "${1^^}"* ]]; then
+        note::remove "$@"
+        return
+      fi
       ;;&
+
     S*)
-      [[ SEARCH != "${1^^}"* ]] ||
-        { note::search "$@" && return ; }
+      if [[ SEARCH == "${1^^}"* ]]; then
+        note::search "$@"
+        return
+      fi
       ;;&
+
     * )
       if (( $# )); then
         errmsg "${0##*/}" "$1" 'unrecognized command'
@@ -272,7 +290,6 @@ note::main()
       return 2
       ;;
   esac
-
 }
 
 
