@@ -1,0 +1,127 @@
+#!/usr/bin/env python3
+"""
+This is an input processor to help ``less'' handle non-text input.
+
+USAGE: ``eval "$(lessfile.py)"''
+   or: ``eval "$(lesspipe.py)"''
+
+Writing lesspipe and lessfile as a single file in to avoid decode stage
+duplication could be a nasty shell script, so I'm writing it in Python.
+
+If ``lessfile'' or ``lesspipe'' is renamed, or if ``lessfilter'' is moved,
+the relevant environment variable(s) must be configured:
+LESSFILE_NAME: The name or path of an executable to use as ``lessfile''
+LESSPIPE_NAME: The name or path of an executable to use as ``lesspipe''
+LESSFILTER: The name or path of a script or file to use as ``lessfilter''
+
+The arguments passed in by ``less'' are as follows:
+argv[0] : the name of the file to pre-process
+argv[1] : the name of the file given for pre-processing
+argv[2] : the name of the file produced by pre-processing
+
+See less(1)
+"""
+
+from os import close, dup, fdopen, getenv, path, remove, umask, write
+from shlex import quote
+from subprocess import run
+from sys import argv, stdin, stdout, exit
+from tempfile import mkstemp
+
+
+class PrePostProcessor():
+    """Definition of an input pre-/post-processor for less(1)
+    """
+    def __init__(self, cmd):
+        """Initialize pre-/post-processor attributes
+        """
+        self.src = path.abspath(__file__)
+        self.cmd = path.basename(cmd)
+        self.env = {
+            'lessfile': getenv('LESSFILE_NAME', 'lessfile'),
+            'lesspipe': getenv('LESSPIPE_NAME', 'lesspipe'),
+            'lessfilter': getenv('LESSFILTER', path.join(
+                getenv('HOME'), '.lessfilter'
+            ))
+        }
+        self.ofileno = stdout.fileno()
+        self.methods = [self.less_setup, self.less_open, self.less_close]
+
+    def less_setup(self):
+        """Configure the executing shell to use the pre-/post-processor
+        """
+        if path.basename(getenv('SHELL', 'sh')).endswith('csh'):
+            lessopen = 'setenv LESSOPEN {};'
+            lessclose = 'setenv LESSCLOSE {};'
+        else:
+            lessopen = 'export LESSOPEN={};'
+            lessclose = 'export LESSCLOSE={};'
+
+        if self.cmd == self.env['lessfile']:
+            print(lessopen.format(quote(f"{quote(self.src)} %s")))
+            print(lessclose.format(quote(f"{quote(self.src)} %s %s")))
+        else:
+            print(lessopen.format(quote(f"||- {quote(self.src)} %s")))
+            print(lessclose.format(quote(f"{quote(self.src)} %s %s")))
+        return 0
+
+    def less_open(self, ifile):
+        """Process input and direct output appropriately
+        """
+        if self.cmd == self.env['lessfile']:
+            umask(0o0077)
+            self.ofileno, ofile = mkstemp(prefix='lessfile-')
+        try:
+            proc = run([self.env['lessfilter'], ifile], stdout=self.ofileno)
+        except BrokenPipeError:
+            pass
+        except FileNotFoundError:
+            proc = None
+        finally:
+            try:
+                try:
+                    if proc is None or proc.returncode != 0:
+                        with open(ifile, 'rb') as istream:
+                            write(self.ofileno, istream.read())
+                except FileNotFoundError:
+                    if ifile == '-':
+                        with fdopen(dup(stdin.fileno()), 'rb') as istream:
+                            write(self.ofileno, istream.read())
+                except NameError:
+                    pass
+            except BrokenPipeError:
+                pass
+            if self.cmd == self.env['lessfile']:
+                close(self.ofileno)
+                print(ofile)
+        return 0
+
+    def less_close(self, ifile, tempfile):
+        """Remove any files created when invoked as lessopen
+        """
+        try:
+            remove(path.realpath(tempfile))
+        except FileNotFoundError:
+            pass
+        except PermissionError:
+            return 1
+        return 0
+
+    def run(self, *args):
+        """Invoke functionality based on the number of arguments
+        """
+        try:
+            self.methods[len(args)](*args)
+        except IndexError:
+            return 1
+        return 0
+
+
+if __name__ == '__main__':
+    try:
+        exit(PrePostProcessor(argv[0]).run(*argv[1:]))
+    except KeyboardInterrupt:
+        exit(130)
+
+
+# vi:ft=python:et:sts=4:sw=4

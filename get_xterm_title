@@ -1,0 +1,37 @@
+#!/usr/bin/env sh
+#
+# Print the contents of the xterm title bar - see xterm(1)
+#
+# This script may either be executed directly or sourced in the environment
+# of an executing shell. If sourced, the function 'get_xterm_title' will be
+# defined and executed in the environment of the sourcing shell.
+
+get_xterm_title()
+{
+    if test -z "${DISPLAY}"
+    then
+        printf 1>&2 '%s: X is not running\n' "${0##*/}"
+        return 1
+    fi
+    if test "${TERM%%-*}" != 'xterm'
+    then
+        printf 1>&2 '%s: this is not an xterm\n' "${0##*/}"
+        return 1
+    fi
+    (
+    set -o errexit
+    restore="$(stty -g)"
+    trap '
+    stty "${restore}"
+    if test -n "${title-}"
+    then
+        title="${title#???}"
+        printf "%s\n" "${title%??}"
+        exit 0
+    fi' EXIT
+    stty raw -echo min 0 time "$(( $((TMOUT)) ? TMOUT : 1 ))"
+    printf '%b' '\e[21t\c' 1> /dev/tty && IFS='' read -r title
+    ) 0< /dev/tty
+}
+
+get_xterm_title "$@"

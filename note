@@ -1,296 +1,333 @@
 #!/usr/bin/env bash
 #
-## create and display simple notes
-###
+# create and display simple notes
+######################################
 
 
-###
-## errmsg - print an error message
-##
-## usage: errmsg [name ...] error
-##
-## @name: program(s), function(s), or value(s) to prepend
-## @error: the error message to print
-##
-## Return: the exit status of the command before this function
-###
-errmsg()
+######################################
+# Print a message to standard output
+# Usage:
+#   msg [CONTEXT ...] MESSAGE
+# Globals:
+#   None
+# Arguments:
+#   CONTEXT: program(s), function(s), or value(s) to prepend
+#   MESSAGE: message to print
+# Return:
+#   exit status of the previous command
+######################################
+msg()
 {
-  trap "$(
-  printf "%s\nreturn $?" "$(
+    # shellcheck disable=SC2064
+    trap "$(
+    printf "%s\nreturn $?" "$(
     : "$(trap -p RETURN)"
     printf '%s' "${_:-trap RETURN}"
-  )"
-  )" RETURN
-  if (( $# > 0 )); then
-    if (( $# > 1 )); then
-      printf '%s: ' "${@:1:($# - 1)}"
-    fi
-    printf '%s\n' "${!#}"
-  fi 1>&2
+    )"
+    )" RETURN
+    if (( $# > 0 ))
+    then
+        if (( $# > 1 ))
+        then
+            printf '%s: ' "${@:1:($# - 1)}"
+        fi
+        printf '%s\n' "${!#}"
+    fi 1>&2
 }
 
 
-###
-## assign_by_ref - assign a value to a variable by reference
-##
-## usage: assign_by_ref name [value]
-##
-## @name: the name of a variable
-## @value: the value to assign
-##
-## Return: 1 if name is an invalid identifier or an array with a bad subscript,
-## otherwise 0
-###
+######################################
+# Print a message to standard error
+# Usage:
+#   errmsg [CONTEXT ...] MESSAGE
+# Globals:
+#   None
+# Arguments:
+#   CONTEXT: program(s), function(s), or value(s) to prepend
+#   MESSAGE: message to print
+# Return:
+#   exit status of the previous command
+######################################
+errmsg()
+{
+    msg "$@" 1>&2
+}
+
+
+#######################################
+# Assign a value to a variable by reference
+# Usage:
+#   assign_by_ref NAME [VALUE]
+# Globals:
+#   BASH_REMATCH
+# Arguments:
+#   NAME: variable name
+#   VALUE: value to assign
+# Return:
+#   1 if given an invalid identifier or a bad array subscript,
+#   2 if given the wrong number of arguments,
+#   0 otherwise
+#######################################
 assign_by_ref()
 {
-  [[ $1 =~ ^([[:alpha:]_][[:alnum:]_]*)(\[(.*)])?$ ]] || 
-    errmsg "${0##*/}" "$1" 'not a valid identifier'   ||
-    return
-  if [[ ${BASH_REMATCH[2]} = ?(\[*([[:blank:]])+([[:digit:]])*([[:blank:]])]) ]]
+  if (( $# < 2 ))
   then
-    eval "$1"'=$2'
-  elif [[ ${!BASH_REMATCH[1]@a} = *A* ]]; then
-    eval "${BASH_REMATCH[1]}[${BASH_REMATCH[3]@Q}]"'=$2'
+    msg::err "${FUNCNAME[0]}" 'usage' "${FUNCNAME[0]} name value ..."
+    return 2
+  fi
+  if [[ $1 =~ ^([[:alpha:]_][[:alnum:]_]*)(\[(.*)])?$ ]]
+  then
+    if [[ -z ${BASH_REMATCH[2]} ]]
+    then
+      if (( $# > 2 ))
+      then
+        eval "$1"'=("${@:2}")'
+      else
+        eval "$1"'=$2'
+      fi
+    elif [[ ${!BASH_REMATCH[1]@a} == *A* ]]
+    then
+      if (( $# > 2 ))
+      then
+        eval "${BASH_REMATCH[1]}[${BASH_REMATCH[3]@Q}]"'=("${@:2}")'
+      else
+        eval "${BASH_REMATCH[1]}[${BASH_REMATCH[3]@Q}]"'=$2'
+      fi
+    elif (( $((BASH_REMATCH[3])), 1 )) 2>/dev/null
+    then
+      if (( $# > 2 ))
+      then
+        eval "${BASH_REMATCH[1]}[$((BASH_REMATCH[3]))]"'=("${@:2}")'
+      else
+        eval "${BASH_REMATCH[1]}[$((BASH_REMATCH[3]))]"'=$2'
+      fi
+    else
+      msg::err "${FUNCNAME[0]}" "${BASH_REMATCH[0]}" 'bad array subscript'
+    fi
   else
-    errmsg "${0#*/}" "${BASH_REMATCH[1]}[${BASH_REMATCH[3]@Q}]" \
-      'bad array subscript'
+    msg::err "${FUNCNAME[0]}" "$1" 'not a valid identifier'
   fi
 }
 
 
-###
-## get_opts_by_ref - assign options to an associative array by reference
-##
-## usage: get_opts_by_ref name [arg ...]
-##
-## @name: the name of an associative array to store options & arguments
-## @arg: argument(s) to parse for options
-##
-## Return: 2 if an invalid option is found or an option is missing an argument,
-## 1 if name is an invalid identifier or an array with a bad subscript,
-## otherwise 0
-###
-get_opts_by_ref()
+######################################
+# Assign options and arguments to an associative array by reference
+# Usage:
+#   getopts_by_ref NAME OPTSTRING [ARG ...]
+# Globals:
+#   OPTIND
+#   OPTARG
+# Arguments:
+#   NAME: an initialized associative array
+#   OPTSTRING: the option letters to be recognized
+#   ARG: argument(s) to parse
+# Return:
+#    2 if an invalid option is found or an option is missing an argument,
+#    1 if NAME is an invalid identifier,
+#    0 if option parsing succeeds,
+#    else non-zero
+######################################
+getopts_by_ref()
 {
-  local optstring="${optstring}"
-  local opt=''
+    local opt || return
 
-  set -- "${@:2}" "$1"
-
-  while getopts ":${optstring}" opt; do
-    case "${opt}" in
-      : ) errmsg "${0##*/}" "${OPTARG}" 'option requires an argument'
-          return 2
-          ;;
-      \?) errmsg "${0##*/}" "${OPTARG}" 'invalid option'
-          return 2
-          ;;
-      * ) assign_by_ref "${!#}[${opt}]" "${OPTARG}"
-          ;;
-    esac
-  done
+    while getopts "$2" opt "${@:3}"
+    do
+        case "${opt}" in
+            \?) errmsg "${0##*/}" "-${OPTARG}" 'invalid option'
+                return 2
+                ;;
+            : ) errmsg "${0##*/}" "-${OPTARG}" 'option requires an argument'
+                return 2
+                ;;
+            * ) assign_by_ref "$1[${opt}]" "${OPTARG}"
+                ;;
+        esac
+    done
 }
 
 
-###
-## list - list notes
-##
-## usage: list
-##
-## Return: 0 unless note directory cannot be accessed
-###
+######################################
+# List notes
+# Usage:
+#   list
+# Globals:
+#   NOTE_TIME_FMT
+#   NOTES
+# Arguments:
+#   None
+# Return:
+#   1 if note(s) cannot be accessed
+#   else 0
+######################################
 note::list()
 {
-  local size="${#NOTES[@]}"
+    local count="${#NOTES[@]}"
 
-  for _ in "${!NOTES[@]}"; do
-    printf '(%0'"${#size}"'d) %s\n' "$_" "$(
-    date -d "${NOTES[_]##*/}" +"${NOTE_TIME_FMT}"
-    )"
-  done
+    for _ in "${!NOTES[@]}"
+    do
+        printf '(%0'"${#count}"'d) %s\n' "$_" "$(
+        date -d "${NOTES[_]##*/}" "+${NOTE_TIME_FMT}"
+        )"
+    done
 }
 
 
-###
-## new - create a note
-##
-## usage: new
-##
-## Return: 0 unless note cannot be written
-###
+######################################
+# Create a note
+# Usage:
+#   new
+# Globals:
+#   NOTE_DIR
+#   NOTE_NAME_FMT
+# Arguments:
+#   None
+# Return:
+#   1 if note cannot be created
+#   else 0
+######################################
 note::new()
 {
-  local -
-  set -o noclobber
+    local -
+    set -o noclobber
 
-  local tempfile=''
+    local temp && temp="$(mktemp --tmpdir "${0##*/}-XXX")" || return 1
 
-  trap -- 'echo; return 130' SIGINT
-  trap -- 'trap SIGINT; '"$(
-  : "$(trap -p RETURN)"
-  printf '%s' "${_:-trap RETURN}"
-  )"$'\nrm -rf "${tempfile}" || true' RETURN
-  trap 'rm -rf "${tempfile}" || true' EXIT
+    trap -- "$(
+    : "$(trap -p RETURN)"
+    printf '%s\n' "${_:-trap RETURN}"
+    : "$(trap -p EXIT)"
+    printf '%s\n' "${_:-trap EXIT}"
+    )"$'\nrm -rf "${temp}"' RETURN
+    trap 'rm -rf "${temp}"' EXIT
 
-  tempfile=$(mktemp --tmpdir "${0##*/}-XXXXXX")
+    cat 1>|"${temp}"
 
-  cat 1>|"${tempfile}"
-
-  until cat "${tempfile}" 1>"${NOTE_HOME}/$(printf "%(${NOTE_NAME_FMT})T")"; do
-    [[ -d ${NOTE_HOME} ]] ||
-      errmsg 2>&1 1>&3 "${0##*/}" "${NOTE_HOME}" 'directory has been removed'
-    [[ -r ${NOTE_HOME} && -w ${NOTE_HOME} && -x ${NOTE_HOME} ]] ||
-      errmsg 2>&1 1>&3 "${0##*/}" "${NOTE_HOME}" 'cannot access directory'
-  done 3>&1 1>&2 2>/dev/null
+    while ! cat "${temp}" 1>"${NOTE_DIR}/$(printf "%(${NOTE_NAME_FMT})T")"
+    do
+        if ! [[ -d ${NOTE_DIR} ]]
+        then
+            errmsg "${0##*/}" "${NOTE_DIR}" 'No such directory'
+            return 1
+        fi
+        if ! [[ -r ${NOTE_DIR} && -w ${NOTE_DIR} && -x ${NOTE_DIR} ]]
+        then
+            errmsg "${0##*/}" "${NOTE_DIR}" 'Permission denied'
+            return 1
+        fi
+    done 1>&2 2>/dev/null
 }
 
 
-###
-## print - print notes
-##
-## usage: print
-##
-## Return: 0 unless notes cannot be accessed
-###
+######################################
+# Print notes
+# Usage:
+#   print
+# Globals:
+#   NOTES
+#   NOTE_TIME_FMT
+# Arguments:
+#   None
+# Return:
+#   1 if note(s) cannot be accessed
+#   else 0
+######################################
 note::print()
 {
-  local size="${#NOTES[@]}"
+    local count="${#NOTES[@]}"
 
-  for _ in "${!NOTES[@]}"; do
-    if (( _ > 0 )); then
-      printf '\n' "$_"
-    fi
-    printf '(%0'"${#size}"'d) %s\n%s\n' "$_" "$(
-    date -d "${NOTES[_]##*/}" +"${NOTE_TIME_FMT}"
-    )" "$(< "${NOTES[_]}")"
-  done
+    for _ in "${!NOTES[@]}"; do
+        printf '(%0'"${#count}"'d) %s\n%s\n%s' "$_" "$(
+        date -d "${NOTES[_]##*/}" "+${NOTE_TIME_FMT}"
+        )" "$(< "${NOTES[_]}")" "${NOTES[_ + 1]//?*/$'\n'}"
+    done
 }
 
 
-###
-## remove - remove a note
-##
-## usage: remove
-###
+######################################
+# remove - remove a note
+#
+# usage: remove
+######################################
 note::remove()
 {
-  printf 'sorry, this is not implemented yet\n'
+    printf 'sorry, this is not implemented yet\n'
 }
 
 
-###
-## search - search for a note
-##
-## usage: search
-###
+######################################
+# search - search for a note
+#
+# usage: search
+######################################
 note::search()
 {
-  printf 'sorry, this is not implemented yet\n'
+    printf 'sorry, this is not implemented yet\n'
 }
 
 
-###
-## usage - print a short usage synopsis
-##
-## usage: usage
-###
-note::usage()
+######################################
+# usage - print a short usage synopsis
+#
+# usage: usage
+######################################
+note::help()
 {
-  printf 'usage: %s [(l)ist|(n)ew|(p)rint|(r)emove|(s)earch]\n' "${0##*/}"
+    printf 'usage: %s [(C)lear|(L)ist|(N)ew|(P)rint|(R)emove|(S)earch]\n' "${0##*/}"
 }
 
 
-###
-## main - start it up
-##
-## usage: main [option ...] [command ...]
-##
-## @option: option(s) to process
-## @command: command(s) to execute
-##
-## Return: 0 upon successful execution; non-zero otherwise
-###
-note::main()
+######################################
+# wipe - delete all notes
+#
+# usage: remove
+######################################
+note::clear()
 {
-  local -
-  set -o errtrace
+    local REPLY;
 
-  trap -- "$(
-  : "$(trap -p ERR)"
-  printf '%s\n' "${_:-trap ERR}"
-  : "$(trap -p RETURN)"
-  printf '%s\n' "${_:-trap RETURN}"
-  )" RETURN
-  trap -- 'return "$?"' ERR
+    read -r -p "Permanently erase all notes? [Y/n] " REPLY
 
-  local NOTE_HOME="${NOTE_HOME:-${XDG_DATA_HOME:-${HOME}/.local/share}/note}"
-
-  local NOTE_TIME_FMT="${NOTE_TIME_FMT:-%A %_d %B %Y %_I:%M %p}"
-
-  local NOTE_NAME_FMT='%FT%T'
-  
-  local NOTES=( "${NOTE_HOME}"/* )
-
-  [[ -e ${NOTES[0]} ]] || NOTES=( )
-
-  if [[ ! -d ${NOTE_HOME} ]]; then
-    mkdir -m 0700 -p "${NOTE_HOME}" ||
-      errmsg "${0##*/}" "${NOTE_HOME}" "cannot create directory"
-  fi
-
-  case ${1^} in
-    H*)
-      if [[ HELP == "${1^^}"* ]]; then
-        note::usage "$@"
-        return
-      fi
-      ;;&
-
-    L*)
-      if [[ LIST == "${1^^}"* ]]; then
-        note::list "$@"
-        return
-      fi
-      ;;&
-
-    N*)
-      if [[ NEW == "${1^^}"* ]]; then
-        note::new "$@"
-        return
-      fi
-      ;;&
-
-    P*)
-      if [[ PRINT == "${1^^}"* ]]; then
-        note::print "$@"
-        return
-      fi
-      ;;&
-
-    R*)
-      if [[ REMOVE == "${1^^}"* ]]; then
-        note::remove "$@"
-        return
-      fi
-      ;;&
-
-    S*)
-      if [[ SEARCH == "${1^^}"* ]]; then
-        note::search "$@"
-        return
-      fi
-      ;;&
-
-    * )
-      if (( $# )); then
-        errmsg "${0##*/}" "$1" 'unrecognized command'
-      fi
-      note::usage 1>&2
-      return 2
-      ;;
-  esac
+    case "${REPLY^^}" in
+        Y*) rm -rf "${NOTES[@]}" && echo Notes erased.
+            ;;
+        * ) echo Aborting...
+            ;;
+    esac
 }
 
 
-note::main "$@"
+NOTE_COMMANDS=( 'clear' 'list' 'new' 'print' 'remove' 'search' )
+
+NOTE_DIR="${NOTE_DIR:-${XDG_DATA_HOME:-${HOME}/.local/share}/note}"
+
+NOTE_NAME_FMT='%FT%T'
+
+NOTE_TIME_FMT="${NOTE_TIME_FMT:-%a %_d %b %Y %_I:%M %p}"
+
+if [[ -d ${NOTE_DIR} ]]
+then
+    shopt -s nullglob
+    NOTES=( "${NOTE_DIR}"/* )
+    shopt -u nullglob
+else
+    NOTES=( )
+    mkdir -m 0700 -p -- "${NOTE_DIR}" || exit
+fi
+
+if (( $# ))
+then
+    for _ in "${NOTE_COMMANDS[@]}"
+    do
+        if [[ $_ == "${1,,}"* ]]
+        then
+            note::"$_" "${@:2}"
+            exit
+        fi
+    done
+    errmsg "${0##*/}" "$1" 'invalid command'
+fi
+
+note::help 1>&2
+
+exit 2

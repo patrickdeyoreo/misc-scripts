@@ -1,9 +1,12 @@
 #!/usr/bin/env sh
 #
-# Generate a colon-separated color palette from an Xresources file
+# Apply colorschemes to a vitual console
+
+# Initialize variables
+unset -v clear
 
 # Check dependencies
-for _ in 'sed' 'sort'
+for _ in 'sed' 'tput'
 do
   if ! command -v "${_}" 1> /dev/null
   then
@@ -20,11 +23,15 @@ help()
     *) cat - ;;
   esac
 } << @EOF
-${0##*/}: usage: ${0##*/} [-h] [FILE]
-    Generate a colon-separated color palette from an Xresources file.
+${0##*/}: usage: ${0##*/} [-h] [-n] [-r] [FILE]
+    Set the virtual console colors.
 
     Color definitions are read from FILE. If FILE is '-' or is not given,
     definitions are read from standard input.
+
+    Options:
+      -n    Inhibit ${0##*/} from clearing the screen.
+      -r    Reset all colors to their original values.
 
     Colors are defined using a restricted form of the Xresources format:
       [*][.]color<N>:#<RGB>
@@ -45,6 +52,13 @@ OPTIND=1
 while getopts ':hnr' 'opt'
 do
   case "${opt}" in
+    'n')
+      clear=''
+      ;;
+    'r')
+      tput 'oc'
+      exit 0
+      ;;
     'h')
       help 1
       exit 0
@@ -62,10 +76,9 @@ shift "$((OPTIND - 1))"
 # Check arguments
 if test "$#" -gt 1
 then
-  { printf '%s: too many arguments\n'
+  { printf '%s: too many arguments\n' "${0##*/}"
     help
   } 1>&2
-  exit 1
 fi
 if test "$#" -eq 0 || test "$1" = '-'
 then
@@ -88,17 +101,14 @@ else
   fi
 fi
 
-sort -V -- "$1" | sed -n '
-/^[[:blank:]]*\*\?\.\?color[[:digit:]]\{,2\}[[:blank:]]*:[[:blank:]]*#[[:xdigit:]]\{6\}[[:blank:]]*$/{
-s/[[:blank:]]*$/:/
-s/.*[[:blank:]]//
-H
+# Apply colors
+clear="${clear-$(tput clear)}" sed -E -n -f /dev/fd/3 "$1" 3<< '@EOF'
+/^[[:blank:]]*\*?\.?color[[:digit:]]+[[:blank:]]*:[[:blank:]]*#[[:xdigit:]]{6}[[:blank:]]*$/{
+s@[^[:digit:]]+([[:digit:]]+)[^[:xdigit:]]+#(..)(..)(..).*@tput initc \1 "$((0x\2*1000/256))" "$((0x\3*1000/256))" "$((0x\4*1000/256))"@ep
+e printf '%s' "${clear}"
 }
-${
-g
-s/\n\|:$//g
-p
-}
-'
+@EOF
+
+exit 0
 
 # vi:ft=sh:tw=0
