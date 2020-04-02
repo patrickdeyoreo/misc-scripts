@@ -1,0 +1,47 @@
+#!/usr/bin/env python3
+"""
+Perhaps one of the last records of rxvt-unicode's bar cursor.
+Oh my oh my how the years do fly by...
+
+DECSCUSR - set cursor style
+<Esc> '[' N <Space> 'q'
+0: Blinky Block
+1: Blinky Block
+2: Steady Block
+3: Blinky Underline
+4: Steady Underline
+5: Blinky Bar
+6: Steady Bar
+"""
+from argparse import ArgumentParser
+from os.path import basename
+from sys import argv
+
+STYLES = {'block': 0, 'underline': 2, 'bar': 4}
+
+
+def parseargs():
+    """
+    Parse command arguments
+    """
+    parser = ArgumentParser(prog=basename(argv[0]), prefix_chars='-+')
+    parser.add_argument('-b', '--blink', action='store_const', const=0,
+                        help='enable blinking cursor (default)')
+    parser.add_argument('+b', '--no-blink', action='store_true', const=1,
+                        dest='blink', default=0,
+                        help='disable blinking cursor')
+    parser.add_argument('style', choices=STYLES.keys(),
+                        help="'block', 'underline', or 'bar'")
+    return parser.parse_args()
+
+
+def main():
+    """
+    Run the program
+    """
+    args = parseargs()
+    print(f'\x1b[{STYLES[args.style]+int(args.blink)+1} q', end='')
+
+
+if __name__ == '__main__':
+    main()

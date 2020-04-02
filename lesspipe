@@ -24,8 +24,8 @@ See less(1)
 
 from os import close, dup, fdopen, getenv, path, remove, umask, write
 from shlex import quote
-from subprocess import run
-from sys import argv, stdin, stdout, exit
+import subprocess
+import sys
 from tempfile import mkstemp
 
 
@@ -44,7 +44,7 @@ class PrePostProcessor():
                 getenv('HOME'), '.lessfilter'
             ))
         }
-        self.ofileno = stdout.fileno()
+        self.ofileno = sys.stdout.fileno()
         self.methods = [self.less_setup, self.less_open, self.less_close]
 
     def less_setup(self):
@@ -69,23 +69,26 @@ class PrePostProcessor():
         """Process input and direct output appropriately
         """
         if self.cmd == self.env['lessfile']:
-            umask(0o0077)
+            umask(0o77)
             self.ofileno, ofile = mkstemp(prefix='lessfile-')
         try:
-            proc = run([self.env['lessfilter'], ifile], stdout=self.ofileno)
+            sproc = subprocess.run(
+                [self.env['lessfilter'], ifile],
+                stdout=self.ofileno,
+                check=False)
         except BrokenPipeError:
             pass
         except FileNotFoundError:
-            proc = None
+            sproc = None
         finally:
             try:
                 try:
-                    if proc is None or proc.returncode != 0:
+                    if sproc is None or sproc.returncode != 0:
                         with open(ifile, 'rb') as istream:
                             write(self.ofileno, istream.read())
                 except FileNotFoundError:
                     if ifile == '-':
-                        with fdopen(dup(stdin.fileno()), 'rb') as istream:
+                        with fdopen(dup(sys.stdin.fileno()), 'rb') as istream:
                             write(self.ofileno, istream.read())
                 except NameError:
                     pass
@@ -96,7 +99,8 @@ class PrePostProcessor():
                 print(ofile)
         return 0
 
-    def less_close(self, ifile, tempfile):
+    @classmethod
+    def less_close(cls, ifile, tempfile):  # pylint: disable=unused-argument
         """Remove any files created when invoked as lessopen
         """
         try:
@@ -119,9 +123,9 @@ class PrePostProcessor():
 
 if __name__ == '__main__':
     try:
-        exit(PrePostProcessor(argv[0]).run(*argv[1:]))
+        sys.exit(PrePostProcessor(sys.argv[0]).run(*sys.argv[1:]))
     except KeyboardInterrupt:
-        exit(130)
+        sys.exit(130)
 
 
 # vi:ft=python:et:sts=4:sw=4

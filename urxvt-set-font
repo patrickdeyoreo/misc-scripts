@@ -1,0 +1,46 @@
+#!/usr/bin/env python3
+"""
+Set the font in rxvt-unicode at runtime...
+
+<Esc> ']50;' FONT-NAME <Bel>
+"""
+from argparse import ArgumentParser, REMAINDER
+from os.path import basename
+from sys import argv, stderr
+
+
+def parseargs():
+    """
+    Parse command arguments
+    """
+    parser = ArgumentParser(prog=basename(argv[0]), prefix_chars='-+')
+    parser.add_argument('-v', '--verbose', action='store_true')
+    parser.add_argument('-x', '--xft', action='store_const', const='xft',
+                        default='xft')
+    parser.add_argument('+x', '--no-xft', action='store_const', const='',
+                        default='xft', dest='xft')
+    parser.add_argument('font')
+    parser.add_argument('size', nargs='?', type=int, default=16)
+    parser.add_argument('style', nargs='?', default=None)
+    return parser.parse_args()
+
+
+def main():
+    """
+    Run the program
+    """
+    args = parseargs()
+    font = []
+    if args.xft:
+        font.append(args.xft)
+    font.append(f'{args.font}-{args.size}')
+    if args.style:
+        font.append(f'style={args.style}')
+    font = ":".join(font)
+    if args.verbose:
+        print('Setting font to', font, file=stderr)
+    print(f'\x1b]50;{font}\x07', end='')
+
+
+if __name__ == '__main__':
+    main()

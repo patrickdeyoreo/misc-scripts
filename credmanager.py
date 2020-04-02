@@ -3,33 +3,59 @@
 Provides a class 'CredentialManager' to manage account credentials
 """
 
-import argparse
-import gpg
+from argparse import ArgumentParser
 import json
-import os
+from os import access, getenv, R_OK, W_OK, X_OK
+from pathlib import Path
 import sys
 from getpass import getpass
+import gpg
 
 
-def trap(exceptions, trap, *args, **kwargs):
+def main():
+    """Execute the credential manager"""
+    args = parse_args()
+    credman = CredentialManager(args.filename, gpghome=args.gpghome)
+    credman.display()
+    credman.save()
+
+
+def parse_args():
+    """Parse command-line arguments"""
+    parser = ArgumentParser(
+        prog=Path(sys.argv[0]).stem,
+        description='Manage login credentials'
+    )
+    parser.add_argument(
+        '--gpghome', type=str,
+        default=getenv('GNUPGHOME', str(Path.home().joinpath('.gnupg'))),
+        help='GPG directory containing keyrings and a trust DB'
+    )
+    parser.add_argument(
+        'filename', type=str,
+        default=str(Path.cwd().joinpath('credentials.gpg')),
+        help='file containing encrypted account credentials'
+    )
+    return parser.parse_args()
+
+
+def trap(exceptions, handler, *args, **kwargs):
     """Create a decorator to catch an exception"""
-    def decorator(fn):
+    def decorator(fun):
         """Wrap a function in an interrupt handler"""
-        def decorated(*fargs, **fkwargs):
+        def decorated(*__args, **__kwargs):
             """Call a function within an interrupt handler"""
             try:
-                return fn(*fargs, **fkwargs)
-            except tuple(exceptions) as exc:
-                if callable(trap):
-                    return trap(*args, **kwargs)
-                return exc
+                return fun(*__args, **__kwargs)
+            except tuple(exceptions):  # pylint: disable=catching-non-exception
+                return handler(*args, **kwargs)
         return decorated
     return decorator
 
 
-class CredentialManager(object):
+class CredentialManager:
     """
-    Manage an encrypted file of credentials
+    Manage encrypted login credentials
     """
     @trap([KeyboardInterrupt], sys.exit, 130)
     def __init__(self, filename=None, gpghome=None):
@@ -37,21 +63,16 @@ class CredentialManager(object):
         Instantiate a credential manager
         """
         if gpghome is None:
-            gpghome = os.getenv(
-                'GNUPGHOME',
-                os.path.join(os.getenv('HOME'), '.gnupg')
-            )
-        if not os.path.exists(gpghome):
+            gpghome = getenv('GNUPGHOME', str(Path.home().joinpath('.gnupg')))
+        if not Path(gpghome).exists():
             raise FileNotFoundError(f"{gpghome}: No such file or directory")
-        if not os.access(gpghome, os.R_OK | os.W_OK | os.X_OK):
+        if not access(gpghome, R_OK | W_OK | X_OK):
             raise PermissionError(f"{gpghome}: Permission denied")
-
         self.__accounts = {}
         self.__filename = filename
         self.__encoder = json.JSONEncoder()
         self.__decoder = json.JSONDecoder()
         self.__gpg = gpg.Context(armor=True, home_dir=gpghome)
-
         self.load()
 
     @property
@@ -67,19 +88,22 @@ class CredentialManager(object):
         Get the value of the private attribute 'filename'
         """
         if filename is None:
-            self.__filename = os.path.join(os.getcwd(), 'credentials.gpg')
-        elif type(filename) is str:
+            filename = Path.cwd().joinpath('credentials.gpg')
+        if isinstance(filename, Path):
+            filename = str(filename)
+        if isinstance(filename, str):
             self.__filename = filename
         else:
-            raise TypeError("filename must be of type 'str'")
+            raise TypeError("filename must be of type 'Path' or 'str'")
 
-    def add(self, account, **credentials):
+    def add(self, account, **creds):
         """
         Add account credentials
         """
-        self.__accounts.setdefault(
-            account, {'user': None, 'pass': None, **credentials}
-        )
+        if account in self.__accounts:
+            print(f"* [ERROR] {account}: Already exists", file=sys.stderr)
+        else:
+            self.__accounts[account] = {'user': None, 'pass': None, **creds}
 
     def remove(self, account):
         """
@@ -88,8 +112,7 @@ class CredentialManager(object):
         if account in self.__accounts:
             del self.__accounts[account]
         else:
-            print(f"{self.__name__}: {account}: No such account",
-                  file=sys.stderr)
+            print(f"* [ERROR] {account}: No such account", file=sys.stderr)
 
     def update(self, account, **credentials):
         """
@@ -102,18 +125,15 @@ class CredentialManager(object):
         Display account credentials
         """
         if account is None:
-            for account in self.__accounts:
-                print(f"{account}:")
-                for name, value in self.__accounts[account].items():
-                    print(f"{name}: {value}")
-
+            for acct in self.__accounts:
+                print(f"> {acct}:")
+                for name, creds in self.__accounts[acct].items():
+                    print(f"\t* {name}: {creds}")
         elif account in self.__accounts:
-            for name, value in self.__accounts[account].items():
-                print(f"{name}: {value}")
-
+            for name, creds in self.__accounts[account].items():
+                print(f"* {name}: {creds}")
         else:
-            print(f"{self.__name__}: {account}: No such account",
-                  file=sys.stderr)
+            print(f"* [ERROR] {account}: No such account", file=sys.stderr)
 
     @trap([KeyboardInterrupt], sys.exit, 130)
     def load(self):
@@ -122,13 +142,11 @@ class CredentialManager(object):
         """
         try:
             with open(self.filename, 'rb') as ciphertext:
-                self.__accounts = self.__decoder.decode(
-                    self.__gpg.decrypt(
-                        ciphertext,
-                        verify=False,
-                        passphrase=getpass("Password: "),
-                    )[0].decode()
-                )
+                self.__accounts = self.__decoder.decode(self.__gpg.decrypt(
+                    ciphertext,
+                    verify=False,
+                    passphrase=getpass("Password: ")
+                )[0].decode())
             print("Credentials loaded.", file=sys.stderr)
         except FileNotFoundError:
             pass
@@ -139,46 +157,16 @@ class CredentialManager(object):
         Encode, encrypt, and save account credentials
         """
         with open(self.filename, 'w') as ciphertext:
-            ciphertext.write(
-                self.__gpg.encrypt(
-                    self.__encoder.encode(self.__accounts).encode(),
-                    sign=False,
-                    passphrase=getpass("Password: "),
-                )[0].decode()
-            )
+            ciphertext.write(self.__gpg.encrypt(
+                self.__encoder.encode(self.__accounts).encode(),
+                sign=False,
+                passphrase=getpass("Password: "),
+            )[0].decode())
         print("Credentials saved.", file=sys.stderr)
 
 
 if __name__ == "__main__":
-
-    parser = argparse.ArgumentParser(
-        prog=os.path.basename(sys.argv[0]),
-        description='Manage sensitive account credentials'
-    )
-    parser.add_argument(
-        'filename',
-        type=str,
-        help='name of file containing encrypted account credentials',
-        default=os.path.join(os.getcwd(), 'credentials.gpg')
-    )
-    parser.add_argument(
-        '--gpghome',
-        type=str,
-        help='gpg directory containing keyrings and a trust database',
-        default=os.getenv(
-            'GNUPGHOME',
-            os.path.join(os.getenv('HOME'), '.gnupg')
-        )
-    )
-    args = parser.parse_args()
-    credman = CredentialManager(args.filename, gpghome=args.gpghome)
-    credman.display()
-    credman.update('foo.com',
-        **{'bar': '{:09d}'.format(__import__('random').randint(0,1000000000))}
-    )
-    credman.display()
-    credman.save()
-    sys.exit(0)
+    sys.exit(main())
 
 
 # vi:et:sts=4:sw=4:ts=8
