@@ -25,10 +25,10 @@ def parseargs():
     Parse command arguments
     """
     parser = ArgumentParser(prog=basename(argv[0]), prefix_chars='-+')
-    parser.add_argument('-b', '--blink', action='store_const', const=0,
+    parser.add_argument('-b', '--blink', action='store_false', default=False,
                         help='enable blinking cursor (default)')
-    parser.add_argument('+b', '--no-blink', action='store_true', const=1,
-                        dest='blink', default=0,
+    parser.add_argument('+b', '--no-blink', action='store_true', default=False,
+                        dest='blink',
                         help='disable blinking cursor')
     parser.add_argument('style', choices=STYLES.keys(),
                         help="'block', 'underline', or 'bar'")
