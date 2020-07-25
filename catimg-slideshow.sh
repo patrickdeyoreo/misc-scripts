@@ -3,7 +3,7 @@
 # Play a slideshow with ASCII art
 
 
-if [[ -n ${DEBUG:+/} ]]
+if [[ -v DEBUG ]]
 then
   set "-${DEBUGOPTS:-xv}"
 fi
